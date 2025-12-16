@@ -1,0 +1,23 @@
+{
+  "name": "zotero-add-items-from-text",
+  "version": "1.0.1",
+  "description": "Zotero 7 plugin to extract and import references from unstructured text using Google Gemini",
+  "author": "Jens Mittelbach",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "npm run clean && npm run compile && npm run bundle",
+    "clean": "rimraf build",
+    "compile": "tsc",
+    "bundle": "node scripts/build.mjs",
+    "watch": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "start": "npm run build && zotero -purgecaches -P dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {}
+}

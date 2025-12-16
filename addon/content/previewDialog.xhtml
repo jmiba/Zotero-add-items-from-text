@@ -1,0 +1,157 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero/skin/zotero.css" type="text/css"?>
+
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        id="add-items-preview-dialog"
+        title="Preview References"
+        width="820"
+        height="650"
+        persist="screenX screenY width height"
+        onload="PreviewDialog.onLoad();">
+
+<script type="application/javascript"><![CDATA[
+var PreviewDialog = {
+  io: null,
+  references: [],
+  validationResults: null,
+  selectedIndices: null,
+  bibtexVisible: false,
+
+  onLoad: function () {
+    this.io = window.arguments[0];
+    const dataIn = (this.io && this.io.dataIn) || {};
+
+    this.references = Array.isArray(dataIn.references) ? dataIn.references : [];
+    this.validationResults = Array.isArray(dataIn.validationResults) ? dataIn.validationResults : null;
+    this.selectedIndices = new Set(this.references.map((_, i) => i));
+
+    const count = this.references.length;
+    document.title = dataIn.title || `Preview: ${count} Reference(s)`;
+    const summary = document.getElementById("preview-summary");
+    if (summary) {
+      summary.textContent = `Found ${count} reference(s). Select which ones to import:`;
+    }
+
+    const bibtexBox = document.getElementById("bibtex-preview");
+    if (bibtexBox && typeof dataIn.bibtex === "string") {
+      bibtexBox.value = dataIn.bibtex;
+    }
+
+    this.renderList();
+  },
+
+  renderList: function () {
+    const listEl = document.getElementById("ref-list");
+    if (!listEl) return;
+
+    while (listEl.firstChild) {
+      listEl.removeChild(listEl.firstChild);
+    }
+
+    for (let index = 0; index < this.references.length; index++) {
+      const ref = this.references[index] || {};
+      const validation = this.validationResults ? this.validationResults[index] : null;
+
+      const row = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      row.style.cssText = "display:flex; gap:10px; padding:10px; border:1px solid #ccc; border-radius:6px; margin-bottom:10px; align-items:flex-start;";
+
+      const checkbox = document.createElementNS("http://www.w3.org/1999/xhtml", "input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.style.marginTop = "3px";
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          this.selectedIndices.add(index);
+        } else {
+          this.selectedIndices.delete(index);
+        }
+      });
+
+      const details = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      details.style.cssText = "flex:1; min-width: 0;";
+
+      const title = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      title.textContent = ref.title || "Untitled";
+      title.style.cssText = "font-weight:600; margin-bottom:4px; word-break:break-word;";
+      details.appendChild(title);
+
+      const meta = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      const authors = Array.isArray(ref.authors)
+        ? ref.authors.map((a) => `${(a && a.lastName) || ""}, ${(a && a.firstName) || ""}`.replace(/^[, ]+|[, ]+$/g, "")).filter(Boolean).join("; ")
+        : "";
+      meta.textContent = `${authors || "Unknown"} (${ref.year || "n.d."}) - ${ref.itemType || "item"}`;
+      meta.style.cssText = "font-size:12px; color:#666; word-break:break-word;";
+      details.appendChild(meta);
+
+      if (validation && (validation.errors?.length || validation.warnings?.length)) {
+        const issues = [...(validation.errors || []), ...(validation.warnings || [])].filter(Boolean);
+        const warn = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+        warn.textContent = `⚠ ${issues.join("; ")}`;
+        warn.style.cssText = `font-size:11px; margin-top:6px; color:${(validation.errors || []).length ? "#c00" : "#f90"}; word-break:break-word;`;
+        details.appendChild(warn);
+      }
+
+      const badge = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      badge.textContent = ref.itemType || "item";
+      badge.style.cssText = "flex:0 0 auto; font-size:11px; padding:2px 8px; background:#e0e0e0; border-radius:999px; margin-top:2px; white-space:nowrap;";
+
+      row.appendChild(checkbox);
+      row.appendChild(details);
+      row.appendChild(badge);
+      listEl.appendChild(row);
+    }
+  },
+
+  toggleBibtex: function () {
+    this.bibtexVisible = !this.bibtexVisible;
+    const box = document.getElementById("bibtex-preview");
+    const btn = document.getElementById("toggle-bibtex");
+    if (box) box.style.display = this.bibtexVisible ? "block" : "none";
+    if (btn) btn.setAttribute("label", this.bibtexVisible ? "Hide BibTeX" : "Show BibTeX");
+  },
+
+  onAccept: function () {
+    if (this.io) {
+      this.io.dataOut = {
+        confirmed: true,
+        selectedIndices: Array.from(this.selectedIndices).sort((a, b) => a - b),
+      };
+    }
+    window.close();
+  },
+
+  onCancel: function () {
+    if (this.io) {
+      this.io.dataOut = { confirmed: false, selectedIndices: [] };
+    }
+    window.close();
+  },
+};
+]]></script>
+
+<vbox flex="1" style="padding: 15px; overflow: hidden;">
+  <description id="preview-summary" style="margin-bottom: 12px; font-weight: bold;">
+    Found 0 reference(s). Select which ones to import:
+  </description>
+
+  <html:div id="ref-list"
+            style="flex: 1; overflow: auto; border: 1px solid #ccc; border-radius: 6px; padding: 10px;">
+  </html:div>
+
+  <hbox style="margin-top: 12px; align-items: center; justify-content: space-between;">
+    <button id="toggle-bibtex" label="Show BibTeX" oncommand="PreviewDialog.toggleBibtex();"/>
+    <hbox style="justify-content: flex-end; gap: 10px;">
+      <button id="cancel-button" label="Cancel" oncommand="PreviewDialog.onCancel();"/>
+      <button id="ok-button" label="Import Selected" default="true" oncommand="PreviewDialog.onAccept();"/>
+    </hbox>
+  </hbox>
+
+  <html:textarea id="bibtex-preview"
+                 style="width: 100%; height: 160px; font-family: monospace; font-size: 11px; display: none; margin-top: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; resize: none;"
+                 readonly="true"></html:textarea>
+</vbox>
+
+</window>
+

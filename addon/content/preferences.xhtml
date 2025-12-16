@@ -1,0 +1,108 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml"
+      id="add-items-from-text-prefs-container">
+
+  <groupbox>
+    <label><html:h2>Google Gemini API</html:h2></label>
+    
+    <hbox align="center">
+      <label value="API Key:" style="width: 80px;" />
+      <html:input type="password" id="add-items-from-text-api-key" 
+                  preference="extensions.zotero.additemsfromtext.geminiApiKey"
+                  style="flex: 1; margin-left: 8px;" />
+    </hbox>
+    <description style="margin-top: 5px; margin-left: 88px; font-size: 11px; color: #666;">
+      Get your API key from aistudio.google.com/apikey
+    </description>
+    
+    <hbox align="center" style="margin-top: 10px;">
+      <label value="Model:" style="width: 80px;" />
+      <menulist id="add-items-from-text-model" 
+                preference="extensions.zotero.additemsfromtext.defaultModel"
+                style="margin-left: 8px; min-width: 250px;">
+        <menupopup>
+          <menuitem label="Gemini 2.0 Flash (Recommended)" value="gemini-2.0-flash"/>
+          <menuitem label="Gemini 2.0 Flash Lite (Faster)" value="gemini-2.0-flash-lite"/>
+          <menuitem label="Gemini 2.5 Flash (Stronger, can 503 more)" value="gemini-2.5-flash"/>
+          <menuitem label="Gemini 2.5 Flash Lite (Stronger/Faster)" value="gemini-2.5-flash-lite"/>
+        </menupopup>
+      </menulist>
+      <button id="add-items-from-text-refresh-models" 
+              label="Refresh Models" 
+              oncommand="AddItemsFromTextPrefs.refreshModels();"
+              style="margin-left: 8px;" />
+    </hbox>
+    <hbox style="margin-top: 5px; margin-left: 88px;">
+      <label id="add-items-from-text-model-status" value="" style="font-size: 11px; color: #666;" />
+    </hbox>
+  </groupbox>
+  
+  <groupbox>
+    <label><html:h2>Import Settings</html:h2></label>
+    
+    <checkbox id="add-items-from-text-auto-validate" 
+              label="Automatically validate extracted references"
+              preference="extensions.zotero.additemsfromtext.autoValidate"/>
+    
+    <checkbox id="add-items-from-text-show-preview"
+              label="Show preview before importing"
+              preference="extensions.zotero.additemsfromtext.showPreview"/>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2>Bibliographic Index Validation</html:h2></label>
+
+    <checkbox id="add-items-from-text-index-validate"
+              label="Validate references against bibliographic indexes"
+              preference="extensions.zotero.additemsfromtext.indexValidate"/>
+
+    <checkbox id="add-items-from-text-index-enrich"
+              label="Fill missing fields from matches (recommended)"
+              preference="extensions.zotero.additemsfromtext.indexEnrich"/>
+
+    <hbox align="center" style="margin-top: 8px;">
+      <checkbox id="add-items-from-text-index-crossref"
+                label="Crossref"
+                preference="extensions.zotero.additemsfromtext.indexCrossref"/>
+      <label value="mailto:" style="margin-left: 10px;"/>
+      <html:input id="add-items-from-text-crossref-mailto"
+                  preference="extensions.zotero.additemsfromtext.crossrefMailto"
+                  placeholder="you@example.org"
+                  style="flex: 1; margin-left: 6px;" />
+    </hbox>
+    <description style="margin-top: 4px; margin-left: 22px; font-size: 11px; color: #666;">
+      Crossref requests a contact email in the User-Agent. Optional but recommended.
+    </description>
+
+    <hbox align="center" style="margin-top: 8px;">
+      <checkbox id="add-items-from-text-index-openalex"
+                label="OpenAlex"
+                preference="extensions.zotero.additemsfromtext.indexOpenAlex"/>
+      <label value="mailto:" style="margin-left: 10px;"/>
+      <html:input id="add-items-from-text-openalex-mailto"
+                  preference="extensions.zotero.additemsfromtext.openAlexMailto"
+                  placeholder="you@example.org"
+                  style="flex: 1; margin-left: 6px;" />
+    </hbox>
+    <description style="margin-top: 4px; margin-left: 22px; font-size: 11px; color: #666;">
+      OpenAlex recommends a mailto query parameter. Optional but polite.
+    </description>
+
+    <checkbox id="add-items-from-text-index-lobid"
+              label="lobid (hbz catalog)"
+              preference="extensions.zotero.additemsfromtext.indexLobid"
+              style="margin-top: 8px;"/>
+  </groupbox>
+  
+  <groupbox>
+    <label><html:h2>About</html:h2></label>
+    <description>
+      Add Items from Text uses Google Gemini AI to extract bibliographic references
+      from unstructured text and import them into your Zotero library.
+    </description>
+    <description style="margin-top: 5px; font-size: 11px; color: #666;">
+      Version 1.0.0
+    </description>
+  </groupbox>
+
+</vbox>
