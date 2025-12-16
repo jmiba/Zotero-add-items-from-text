@@ -97,6 +97,33 @@
               label="lobid (hbz catalog)"
               preference="extensions.zotero.additemsfromtext.indexLobid"
               style="margin-top: 8px;"/>
+
+    <checkbox id="add-items-from-text-index-loc"
+              label="Library of Congress (loc.gov)"
+              preference="extensions.zotero.additemsfromtext.indexLoc"
+              style="margin-top: 8px;"/>
+    <description style="margin-top: 4px; margin-left: 22px; font-size: 11px; color: #666;">
+      Note: the loc.gov JSON API primarily indexes digitized/online content; many print-only books may not be found.
+    </description>
+
+    <hbox align="center" style="margin-top: 8px;">
+      <checkbox id="add-items-from-text-index-gbv"
+                label="GBV/K10Plus (SRU)"
+                preference="extensions.zotero.additemsfromtext.indexGbv"/>
+      <label value="endpoint:" style="margin-left: 10px;"/>
+      <html:input id="add-items-from-text-gbv-sru-url"
+                  preference="extensions.zotero.additemsfromtext.gbvSruUrl"
+                  placeholder="https://sru.k10plus.de/gvk"
+                  style="flex: 1; margin-left: 6px;" />
+    </hbox>
+    <description style="margin-top: 4px; margin-left: 22px; font-size: 11px; color: #666;">
+      Uses the GBV/K10Plus SRU interface (defaults to the GBV union catalog endpoint).
+    </description>
+
+    <checkbox id="add-items-from-text-index-wikidata"
+              label="Wikidata"
+              preference="extensions.zotero.additemsfromtext.indexWikidata"
+              style="margin-top: 8px;"/>
   </groupbox>
   
   <groupbox>

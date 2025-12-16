@@ -8,7 +8,7 @@ A Zotero 7 plugin that extracts and imports literature references from unstructu
 - **AI-Powered Extraction**: Uses Google Gemini to intelligently parse references
 - **Multiple Reference Formats**: Handles journal articles, books, book chapters, conference papers, theses, and more
 - **Validation (AI)**: Optional automated validation of extracted bibliographic data
-- **Validation (Indexes)**: Optional checks against Crossref, OpenAlex, and lobid (hbz catalog)
+- **Validation (Indexes)**: Optional checks against Crossref, OpenAlex, lobid (hbz catalog), Library of Congress, GBV/K10Plus (SRU), and Wikidata
 - **Enrichment**: High-confidence index matches can fill/overwrite missing bibliographic fields (including author lists)
 - **Preview Before Import**: Review and select which references to import
 - **BibTeX Support**: View extracted references in BibTeX format
@@ -25,7 +25,7 @@ flowchart TD
   E -- Yes --> F[Gemini: validate extracted references]
   E -- No --> G
   F --> G{Index validation enabled?}
-  G -- Yes --> H[Crossref/OpenAlex/lobid lookup]
+  G -- Yes --> H[Crossref/OpenAlex/lobid/LoC/GBV/Wikidata lookup]
   H --> I[Merge validation messages]
   H --> J[Enrich fields on high-confidence match]
   G -- No --> K
@@ -75,6 +75,7 @@ flowchart TD
 
 - **DOIs on books**: Zotero doesn’t allow a DOI field for all item types. If setting `DOI` fails, the add-on stores it as `DOI:<doi>` in the item’s `Extra` field.
 - **Index enrichment policy**: When an index match is very high confidence (e.g. DOI match), the add-on may overwrite core bibliographic fields to align with the authoritative record.
+- **Library of Congress lookup coverage**: The `loc.gov` JSON API primarily indexes digitized/online content and may miss many print-only books (including modern academic titles). Comprehensive LoC catalog access would require their Z39.50/SRU interfaces (not implemented).
 
 ## Development
 
@@ -109,7 +110,7 @@ npm run watch
 │   ├── config.ts          # Configuration
 │   ├── preferences.ts     # Preferences management
 │   ├── gemini.ts          # Gemini API integration
-│   ├── indices.ts         # Crossref/OpenAlex/lobid validation & enrichment
+│   ├── indices.ts         # Index validation & enrichment (Crossref/OpenAlex/lobid/LoC/GBV/Wikidata)
 │   ├── bibtex.ts          # BibTeX utilities
 │   ├── import.ts          # Zotero import service
 │   └── ui.ts              # UI components
@@ -134,7 +135,7 @@ zip -r ../add-items-from-text.xpi *
 
 ## Privacy
 
-This plugin sends your pasted text to Google's Gemini API for processing. If enabled, it also queries bibliographic indexes (Crossref, OpenAlex, lobid) using extracted metadata (e.g., title/DOI). No data is stored or shared beyond what's necessary for these API calls. Please review the providers’ terms for more information.
+This plugin sends your pasted text to Google's Gemini API for processing. If enabled, it also queries bibliographic indexes (Crossref, OpenAlex, lobid, Library of Congress, GBV/K10Plus, Wikidata) using extracted metadata (e.g., title/DOI). No data is stored or shared beyond what's necessary for these API calls. Please review the providers’ terms for more information.
 
 ## License
 

@@ -88,14 +88,28 @@ var PreviewDialog = {
       if (validation && (validation.errors?.length || validation.warnings?.length)) {
         const issues = [...(validation.errors || []), ...(validation.warnings || [])].filter(Boolean);
         const warn = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
-        warn.textContent = `⚠ ${issues.join("; ")}`;
-        warn.style.cssText = `font-size:11px; margin-top:6px; color:${(validation.errors || []).length ? "#c00" : "#f90"}; word-break:break-word;`;
+        warn.style.cssText = "font-size:11px; margin-top:6px; word-break:break-word;";
+        
+        // Determine color based on content: green for matches, red for errors, orange for warnings
+        const hasErrors = (validation.errors || []).length > 0;
+        const hasMatches = issues.some((msg) => /matched|validated/i.test(msg));
+        
+        if (hasErrors) {
+          warn.style.color = "#c00";
+          warn.textContent = `⚠ ${issues.join("; ")}`;
+        } else if (hasMatches) {
+          warn.style.color = "#2a2";
+          warn.textContent = `✓ ${issues.join("; ")}`;
+        } else {
+          warn.style.color = "#f90";
+          warn.textContent = `⚠ ${issues.join("; ")}`;
+        }
         details.appendChild(warn);
       }
 
       const badge = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       badge.textContent = ref.itemType || "item";
-      badge.style.cssText = "flex:0 0 auto; font-size:11px; padding:2px 8px; background:#e0e0e0; border-radius:999px; margin-top:2px; white-space:nowrap;";
+      badge.style.cssText = "flex:0 0 auto; font-size:11px; padding:2px 8px; background:#555; color:#fff; border-radius:999px; margin-top:2px; white-space:nowrap;";
 
       row.appendChild(checkbox);
       row.appendChild(details);

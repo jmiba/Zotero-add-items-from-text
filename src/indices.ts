@@ -1,6 +1,6 @@
 import { ExtractedReference, ValidationResult } from "./gemini";
 
-export type IndexSource = "crossref" | "openalex" | "lobid";
+export type IndexSource = "crossref" | "openalex" | "lobid" | "loc" | "gbv" | "wikidata";
 export type IndexStatus = "validated" | "invalid" | "not_found" | "error";
 
 export interface IndexPreferences {
@@ -11,6 +11,10 @@ export interface IndexPreferences {
   openalex: boolean;
   openalexMailto?: string;
   lobid: boolean;
+  loc: boolean;
+  gbv: boolean;
+  gbvSruUrl?: string;
+  wikidata: boolean;
 }
 
 interface IndexMatch {
@@ -106,7 +110,18 @@ function extractYear(ref: ExtractedReference): string {
 }
 
 function buildValidationFromMatch(match: IndexMatch): ValidationResult {
-  const prefix = match.source === "openalex" ? "OpenAlex" : match.source === "crossref" ? "Crossref" : "lobid";
+  const prefix =
+    match.source === "openalex"
+      ? "OpenAlex"
+      : match.source === "crossref"
+        ? "Crossref"
+        : match.source === "lobid"
+          ? "lobid"
+          : match.source === "loc"
+            ? "Library of Congress"
+            : match.source === "gbv"
+              ? "GBV/K10Plus"
+              : "Wikidata";
   const message = `${prefix}: ${match.explanation}${match.url ? ` (${match.url})` : ""}`;
   if (match.status === "invalid") {
     return { isValid: false, errors: [message], warnings: [], suggestions: [] };
@@ -165,7 +180,11 @@ async function requestJsonWithRetry(
     const data = (() => {
       // Zotero can return parsed JSON or a JSON string depending on internal plumbing
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const body: any = (response as any).response;
+      const responseAny: any = response as any;
+      const body: any =
+        responseAny.response !== undefined && responseAny.response !== null && responseAny.response !== ""
+          ? responseAny.response
+          : responseAny.responseText;
       if (typeof body === "string") {
         try {
           return JSON.parse(body);
@@ -315,6 +334,7 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
       return { source: "crossref", status: "not_found", score: 0, explanation: "no results" };
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let best: { item: any; score: number } | null = null;
     for (const item of items) {
       const title = Array.isArray(item.title) ? item.title[0] : item.title;
@@ -493,6 +513,7 @@ async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<
       return { source: "openalex", status: "not_found", score: 0, explanation: "no results" };
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let best: { work: any; score: number } | null = null;
     for (const work of results) {
       const title = work.display_name || "";
@@ -592,6 +613,7 @@ async function matchLobid(ref: ExtractedReference): Promise<IndexMatch> {
       return { source: "lobid", status: "not_found", score: 0, explanation: "no results" };
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let best: { item: any; score: number } | null = null;
     for (const item of member) {
       const title = Array.isArray(item.title) ? item.title[0] : item.title;
@@ -643,6 +665,348 @@ async function matchLobid(ref: ExtractedReference): Promise<IndexMatch> {
     return { source: "lobid", status: "not_found", score: best.score, explanation: `best score too low (${best.score.toFixed(2)})` };
   } catch (e) {
     return { source: "lobid", status: "error", score: 0, explanation: `error: ${String(e)}` };
+  }
+}
+
+async function matchLoC(ref: ExtractedReference): Promise<IndexMatch> {
+  try {
+    // Use the general search with book filter for better coverage
+    // Note: the loc.gov JSON API primarily indexes digitized/online content and may miss print-only books;
+    // comprehensive LoC catalog access would require Z39.50/SRU (not implemented).
+    const titleTokens = normalizeText(ref.title || "")
+      .split(" ")
+      .filter((t) => t.length >= 3)
+      .slice(0, 6);
+    
+    if (!titleTokens.length) {
+      return { source: "loc", status: "not_found", score: 0, explanation: "missing title" };
+    }
+
+    const surname = firstAuthorLastName(ref);
+    const queryParts = [...titleTokens];
+    if (surname) queryParts.push(surname);
+    
+    const params = new URLSearchParams();
+    params.set("fo", "json");
+    params.set("c", "10");
+    params.set("q", queryParts.join(" "));
+    // Filter to books only to avoid newspapers, videos, etc.
+    params.set("fa", "original-format:book");
+    
+    const url = `https://www.loc.gov/search/?${params.toString()}`;
+
+    const { status, data } = await requestJsonWithRetry(url, {
+      headers: { "User-Agent": "AddItemsFromText/1.0" },
+    });
+    if (status !== 200) {
+      return { source: "loc", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: any[] = (data as any)?.results || [];
+    if (!results.length) {
+      return { source: "loc", status: "not_found", score: 0, explanation: "no results" };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let best: { item: any; score: number } | null = null;
+    for (const item of results) {
+      const title = item?.title || "";
+      const contributors: string[] = Array.isArray(item?.contributor)
+        ? item.contributor
+        : typeof item?.contributor === "string"
+          ? [item.contributor]
+          : [];
+      const candidateSurname = contributors.length ? contributors[0].split(",")[0] : "";
+      const candidateYear = typeof item?.date === "string" ? (item.date.match(/\b(\d{4})\b/)?.[1] || "") : "";
+
+      const { score } = scoreCandidate(ref, {
+        title,
+        doi: item?.doi,
+        year: candidateYear,
+        firstAuthorLastName: candidateSurname,
+      });
+
+      if (!best || score > best.score) best = { item, score };
+    }
+
+    if (!best) {
+      return { source: "loc", status: "not_found", score: 0, explanation: "no usable results" };
+    }
+
+    if (best.score >= 0.8) {
+      const item = best.item;
+      const title = item?.title || ref.title;
+      const candidateYear = typeof item?.date === "string" ? (item.date.match(/\b(\d{4})\b/)?.[1] || "") : "";
+      const patch: Partial<ExtractedReference> = {
+        title,
+        year: candidateYear || ref.year,
+        date: candidateYear || ref.date,
+      };
+      return {
+        source: "loc",
+        status: "validated",
+        score: best.score,
+        explanation: `matched (score ${best.score.toFixed(2)})`,
+        url: item?.url,
+        patch,
+      };
+    }
+
+    return { source: "loc", status: "not_found", score: best.score, explanation: `best score too low (${best.score.toFixed(2)})` };
+  } catch (e) {
+    return { source: "loc", status: "error", score: 0, explanation: `error: ${String(e)}` };
+  }
+}
+
+function parseSruDcRecord(xmlDoc: Document): Array<{
+  title: string;
+  creator: string;
+  date: string;
+  identifiers: string[];
+  recordId?: string;
+}> {
+  const nsDc = "http://purl.org/dc/elements/1.1/";
+  const records = Array.from(xmlDoc.getElementsByTagNameNS("*", "record"));
+
+  const parsed: Array<{
+    title: string;
+    creator: string;
+    date: string;
+    identifiers: string[];
+    recordId?: string;
+  }> = [];
+
+  for (const record of records) {
+    const title = record.getElementsByTagNameNS(nsDc, "title")?.[0]?.textContent?.trim() || "";
+    const creator = record.getElementsByTagNameNS(nsDc, "creator")?.[0]?.textContent?.trim() || "";
+    const date = record.getElementsByTagNameNS(nsDc, "date")?.[0]?.textContent?.trim() || "";
+    const identifiers = Array.from(record.getElementsByTagNameNS(nsDc, "identifier")).map((n) => (n.textContent || "").trim()).filter(Boolean);
+    const recordId =
+      record.getElementsByTagNameNS("http://www.loc.gov/zing/srw/", "recordIdentifier")?.[0]?.textContent?.trim() ||
+      record.getElementsByTagNameNS("*", "recordIdentifier")?.[0]?.textContent?.trim() ||
+      undefined;
+
+    if (!title && !creator && !date && identifiers.length === 0) continue;
+    parsed.push({ title, creator, date, identifiers, recordId });
+  }
+
+  return parsed;
+}
+
+function extractIsbnFromIdentifiers(identifiers: string[]): string {
+  for (const id of identifiers) {
+    const cleaned = id
+      .replace(/^urn:isbn:/i, "")
+      .replace(/^isbn:/i, "")
+      .replace(/[^0-9Xx]/g, "");
+    if (!cleaned) continue;
+    try {
+      const normalized = Zotero.Utilities.cleanISBN(cleaned);
+      if (normalized) return normalized;
+    } catch {
+      // ignore
+    }
+  }
+  return "";
+}
+
+async function matchGbvK10plus(ref: ExtractedReference, sruUrl?: string): Promise<IndexMatch> {
+  const baseUrl = (sruUrl || "https://sru.k10plus.de/gvk").trim();
+  try {
+    // Get significant title words (filter short words, take up to 5 for AND query)
+    const titleTokens = normalizeText(ref.title || "")
+      .split(" ")
+      .filter((t) => t.length >= 3) // Skip very short words (a, in, of, etc.)
+      .slice(0, 5);
+    
+    if (!titleTokens.length) {
+      return { source: "gbv", status: "not_found", score: 0, explanation: "missing title" };
+    }
+
+    // Build CQL query: K10plus SRU requires explicit "pica.tit=word" joined with "and"
+    // Use first few significant words connected with AND for precision
+    const titleClauses = titleTokens.map((t) => `pica.tit=${t}`);
+    const titleQuery = titleClauses.join(" and ");
+    
+    const author = firstAuthorLastName(ref);
+    const authorQuery = author ? ` and pica.per=${author}` : "";
+    const query = `${titleQuery}${authorQuery}`;
+    if (!query) {
+      return { source: "gbv", status: "not_found", score: 0, explanation: "missing title" };
+    }
+
+    const params = new URLSearchParams();
+    params.set("version", "1.1");
+    params.set("operation", "searchRetrieve");
+    params.set("query", query);
+    params.set("maximumRecords", "5");
+    params.set("recordSchema", "dc");
+
+    const url = `${baseUrl}?${params.toString()}`;
+    const response = await Zotero.HTTP.request("GET", url, {
+      headers: { Accept: "application/xml", "User-Agent": "AddItemsFromText/1.0" },
+      responseType: "text",
+      timeout: 30000,
+      successCodes: [200, 400, 404, 429, 500, 502, 503, 504],
+    });
+
+    if (response.status !== 200) {
+      return { source: "gbv", status: "error", score: 0, explanation: `search failed (HTTP ${response.status})`, url };
+    }
+
+    const xmlText = response.responseText || response.response || "";
+    if (!xmlText) {
+      return { source: "gbv", status: "error", score: 0, explanation: "empty SRU response" };
+    }
+
+    const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+    const parsed = parseSruDcRecord(doc);
+    if (!parsed.length) {
+      return { source: "gbv", status: "not_found", score: 0, explanation: "no results" };
+    }
+
+    let best: { item: (typeof parsed)[number]; score: number } | null = null;
+    for (const item of parsed) {
+      const candidateYear = item.date.match(/\b(\d{4})\b/)?.[1] || "";
+      const candidateSurname = item.creator.split(",")[0] || item.creator.split(" ").slice(-1)[0] || "";
+      const titleScore = diceCoefficient(ref.title || "", item.title);
+      const authorScore =
+        firstAuthorLastName(ref) && candidateSurname
+          ? firstAuthorLastName(ref) === normalizeText(candidateSurname)
+            ? 1
+            : 0
+          : 0;
+
+      // The SRU Dublin Core schema is often sparse (missing reliable author/year), so
+      // avoid capping strong title matches at 0.75 as in the generic scorer.
+      const score = 0.9 * titleScore + 0.1 * authorScore;
+      if (!best || score > best.score) best = { item, score };
+    }
+
+    if (!best) return { source: "gbv", status: "not_found", score: 0, explanation: "no usable results" };
+
+    if (best.score >= 0.8) {
+      const candidateYear = best.item.date.match(/\b(\d{4})\b/)?.[1] || "";
+      const isbn = extractIsbnFromIdentifiers(best.item.identifiers);
+      const patch: Partial<ExtractedReference> = {
+        title: best.item.title || ref.title,
+        year: candidateYear || ref.year,
+        date: candidateYear || ref.date,
+        ISBN: isbn || ref.ISBN,
+      };
+      const recordUrl = best.item.recordId ? `https://kxp.k10plus.de/DB=2.299/PPNSET?PPN=${encodeURIComponent(best.item.recordId)}` : undefined;
+      return {
+        source: "gbv",
+        status: "validated",
+        score: best.score,
+        explanation: `matched (score ${best.score.toFixed(2)})`,
+        url: recordUrl,
+        patch,
+      };
+    }
+
+    return { source: "gbv", status: "not_found", score: best.score, explanation: `best score too low (${best.score.toFixed(2)})`, url };
+  } catch (e) {
+    return { source: "gbv", status: "error", score: 0, explanation: `error: ${String(e)}` };
+  }
+}
+
+async function matchWikidata(ref: ExtractedReference): Promise<IndexMatch> {
+  const doi = normalizeDOI(ref.DOI);
+  try {
+    if (doi) {
+      const doiLc = doi.toLowerCase();
+      const sparql = `
+SELECT ?work ?title ?date ?doi WHERE {
+  ?work wdt:P356 ?doi .
+  FILTER(LCASE(STR(?doi)) = "${doiLc}") .
+  OPTIONAL { ?work wdt:P1476 ?title . }
+  OPTIONAL { ?work wdt:P577 ?date . }
+}
+LIMIT 1
+`.trim();
+
+      const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`;
+      const { status, data } = await requestJsonWithRetry(url, {
+        headers: { "User-Agent": "AddItemsFromText/1.0", Accept: "application/sparql-results+json" },
+      });
+      if (status !== 200) {
+        return { source: "wikidata", status: "error", score: 0, explanation: `SPARQL failed (HTTP ${status})` };
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const binding = (data as any)?.results?.bindings?.[0];
+      if (!binding) return { source: "wikidata", status: "not_found", score: 0, explanation: "no DOI match" };
+
+      const title = binding.title?.value || ref.title;
+      const dateVal = binding.date?.value || "";
+      const candidateYear = typeof dateVal === "string" ? (dateVal.match(/\b(\d{4})\b/)?.[1] || "") : "";
+      const workUrl = binding.work?.value;
+
+      const { score } = scoreCandidate(ref, { title, doi, year: candidateYear });
+      if (score >= 0.8) {
+        const patch: Partial<ExtractedReference> = {
+          title,
+          DOI: doi,
+          year: candidateYear || ref.year,
+          date: candidateYear || ref.date,
+        };
+        return { source: "wikidata", status: "validated", score: 1, explanation: "DOI match", url: workUrl, patch };
+      }
+      return { source: "wikidata", status: "invalid", score, explanation: `DOI match but title mismatch (score ${score.toFixed(2)})`, url: workUrl };
+    }
+
+    // Fallback: entity search by title
+    if (isBlank(ref.title)) return { source: "wikidata", status: "not_found", score: 0, explanation: "no title to search" };
+    const params = new URLSearchParams();
+    params.set("action", "wbsearchentities");
+    params.set("format", "json");
+    params.set("language", "en");
+    params.set("origin", "*");
+    params.set("type", "item");
+    params.set("limit", "5");
+    params.set("search", ref.title || "");
+
+    const url = `https://www.wikidata.org/w/api.php?${params.toString()}`;
+    const { status, data } = await requestJsonWithRetry(url, {
+      headers: { "User-Agent": "AddItemsFromText/1.0" },
+    });
+    if (status !== 200) {
+      return { source: "wikidata", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const search: any[] = (data as any)?.search || [];
+    if (!search.length) return { source: "wikidata", status: "not_found", score: 0, explanation: "no results" };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let best: { item: any; score: number } | null = null;
+    for (const item of search) {
+      const candidateTitle = item?.label || item?.display?.label?.value || "";
+      const desc = item?.description || item?.display?.description?.value || "";
+      const titleScore = diceCoefficient(ref.title || "", candidateTitle);
+      // boost if description suggests a scholarly work
+      const boost = /article|book|paper|publication|journal/i.test(desc) ? 0.05 : 0;
+      const score = Math.min(1, titleScore + boost);
+      if (!best || score > best.score) best = { item, score };
+    }
+
+    if (!best) return { source: "wikidata", status: "not_found", score: 0, explanation: "no usable results" };
+    if (best.score >= 0.85) {
+      const patch: Partial<ExtractedReference> = { title: best.item?.label || best.item?.display?.label?.value || ref.title };
+      return {
+        source: "wikidata",
+        status: "validated",
+        score: best.score,
+        explanation: `matched by label (score ${best.score.toFixed(2)})`,
+        url: best.item.concepturi,
+        patch,
+      };
+    }
+    return { source: "wikidata", status: "not_found", score: best.score, explanation: `best score too low (${best.score.toFixed(2)})` };
+  } catch (e) {
+    return { source: "wikidata", status: "error", score: 0, explanation: `error: ${String(e)}` };
   }
 }
 
@@ -718,6 +1082,9 @@ export class IndexValidationService {
       if (prefs.crossref) matches.push(await matchCrossref(ref, prefs.crossrefMailto));
       if (prefs.openalex) matches.push(await matchOpenAlex(ref, prefs.openalexMailto));
       if (prefs.lobid) matches.push(await matchLobid(ref));
+      if (prefs.loc) matches.push(await matchLoC(ref));
+      if (prefs.gbv) matches.push(await matchGbvK10plus(ref, prefs.gbvSruUrl));
+      if (prefs.wikidata) matches.push(await matchWikidata(ref));
 
       const best = matches
         .slice()

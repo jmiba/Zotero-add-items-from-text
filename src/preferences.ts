@@ -16,6 +16,10 @@ export interface PluginPreferences {
   indexOpenAlex: boolean;
   openAlexMailto: string;
   indexLobid: boolean;
+  indexLoc: boolean;
+  indexGbv: boolean;
+  gbvSruUrl: string;
+  indexWikidata: boolean;
 }
 
 const defaultPrefs: PluginPreferences = {
@@ -30,6 +34,10 @@ const defaultPrefs: PluginPreferences = {
   indexOpenAlex: true,
   openAlexMailto: "",
   indexLobid: true,
+  indexLoc: true,
+  indexGbv: true,
+  gbvSruUrl: "https://sru.k10plus.de/gvk",
+  indexWikidata: true,
 };
 
 export class PreferencesManager {
@@ -84,6 +92,10 @@ export class PreferencesManager {
       indexOpenAlex: this.get("indexOpenAlex"),
       openAlexMailto: this.get("openAlexMailto"),
       indexLobid: this.get("indexLobid"),
+      indexLoc: this.get("indexLoc"),
+      indexGbv: this.get("indexGbv"),
+      gbvSruUrl: this.get("gbvSruUrl"),
+      indexWikidata: this.get("indexWikidata"),
     };
   }
 

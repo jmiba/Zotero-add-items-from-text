@@ -1,6 +1,28 @@
 // Preferences script for Add Items from Text plugin
 
 var AddItemsFromTextPrefs = {
+  ensureDefaults() {
+    const defaults = {
+      'extensions.zotero.additemsfromtext.indexLoc': true,
+      'extensions.zotero.additemsfromtext.indexGbv': true,
+      'extensions.zotero.additemsfromtext.gbvSruUrl': 'https://sru.k10plus.de/gvk',
+      'extensions.zotero.additemsfromtext.indexWikidata': true,
+    };
+
+    for (const [pref, value] of Object.entries(defaults)) {
+      const current = Zotero.Prefs.get(pref, true);
+      if (current === undefined || current === null || current === "undefined") {
+        Zotero.Prefs.set(pref, value, true);
+      }
+    }
+
+    // If the preference binding ended up writing the string "undefined" into the input, fix it.
+    const gbvInput = document.getElementById('add-items-from-text-gbv-sru-url');
+    if (gbvInput && (gbvInput.value === "undefined" || gbvInput.value === "")) {
+      gbvInput.value = Zotero.Prefs.get('extensions.zotero.additemsfromtext.gbvSruUrl', true) || defaults['extensions.zotero.additemsfromtext.gbvSruUrl'];
+    }
+  },
+
   async refreshModels() {
     const apiKeyInput = document.getElementById('add-items-from-text-api-key');
     const modelList = document.getElementById('add-items-from-text-model');
@@ -113,3 +135,11 @@ var AddItemsFromTextPrefs = {
     }
   }
 };
+
+window.addEventListener('load', () => {
+  try {
+    AddItemsFromTextPrefs.ensureDefaults();
+  } catch (e) {
+    Zotero.debug('Add Items from Text: Error initializing defaults: ' + e);
+  }
+});

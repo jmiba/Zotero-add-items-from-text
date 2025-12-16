@@ -21,6 +21,13 @@ export class UIService {
     this.window = window;
   }
 
+  /**
+   * Clear the stored last input text (call after successful import)
+   */
+  clearLastInputText(): void {
+    this.lastInputText = "";
+  }
+
   closeTextInputDialogs(): void {
     try {
       const enumerator = Services.wm.getEnumerator(null);

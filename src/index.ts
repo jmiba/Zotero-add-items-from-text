@@ -259,6 +259,10 @@ class AddItemsFromTextPlugin {
               openalex: PreferencesManager.get("indexOpenAlex"),
               openalexMailto: PreferencesManager.get("openAlexMailto"),
               lobid: PreferencesManager.get("indexLobid"),
+              loc: PreferencesManager.get("indexLoc"),
+              gbv: PreferencesManager.get("indexGbv"),
+              gbvSruUrl: PreferencesManager.get("gbvSruUrl"),
+              wikidata: PreferencesManager.get("indexWikidata"),
             },
             (current, total, title) => {
               const pct = 65 + Math.round((current / Math.max(total, 1)) * 25);
@@ -321,6 +325,12 @@ class AddItemsFromTextPlugin {
         result.errors.length,
         errorDetails
       );
+
+      // Clear the textbox on successful import
+      if (result.imported.length > 0) {
+        ui.clearLastInputText();
+      }
+
       ui.closeTextInputDialogs();
     } catch (error) {
       Zotero.logError(error as Error);
@@ -378,4 +388,4 @@ class AddItemsFromTextPlugin {
 }
 
 // Export the plugin instance - this will be exposed via the build script
-export var AddItemsFromText = new AddItemsFromTextPlugin();
+export const AddItemsFromText = new AddItemsFromTextPlugin();
