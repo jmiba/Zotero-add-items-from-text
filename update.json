@@ -3,8 +3,8 @@
     "add-items-from-text@zotero.org": {
       "updates": [
         {
-          "version": "1.0.1",
-          "update_link": "https://github.com/jmiba/Zotero-add-items-from-text/releases/download/v1.0.1/add-items-from-text.xpi",
+          "version": "1.0.2",
+          "update_link": "https://github.com/jmiba/Zotero-add-items-from-text/releases/download/v1.0.2/add-items-from-text.xpi",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0"

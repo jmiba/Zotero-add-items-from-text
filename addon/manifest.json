@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Add Items from Text",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Extract and import literature references from unstructured text using Google Gemini AI",
   "author": "Jens Mittelbach",
   "homepage_url": "https://github.com/jmiba/Zotero-add-items-from-text",

@@ -11,9 +11,14 @@
                   preference="extensions.zotero.additemsfromtext.geminiApiKey"
                   style="flex: 1; margin-left: 8px;" />
     </hbox>
-    <description style="margin-top: 5px; margin-left: 88px; font-size: 11px; color: #666;">
-      Get your API key from aistudio.google.com/apikey
-    </description>
+    <hbox style="margin-top: 5px; margin-left: 88px; align-items: center;">
+      <label value="Get your API key from" style="font-size: 11px; color: #666; margin-right: 4px;" />
+      <label class="text-link"
+             value="aistudio.google.com/apikey"
+             style="font-size: 11px;"
+             tooltiptext="Open Google AI Studio API keys"
+             onclick="Zotero.launchURL('https://aistudio.google.com/apikey');" />
+    </hbox>
     
     <hbox align="center" style="margin-top: 10px;">
       <label value="Model:" style="width: 80px;" />
