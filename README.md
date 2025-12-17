@@ -37,6 +37,29 @@ flowchart TD
   L --> M[Results summary + errors]
 ```
 
+## Screenshots
+
+New button in toolbar:
+
+![Add items from text button](image.png)
+
+Seetings dialog:
+
+![Plugin settings](image-1.png)
+
+Text input:
+
+![TExt input area](image-2.png)
+
+Extraction preview:
+
+![Extracted and validated items](image-3.png)
+
+Items added to library:
+
+![Items in Zotero library](image-4.png)
+
+
 ## Installation
 
 1. Download the latest `.xpi` file from the [Releases](../../releases) page
