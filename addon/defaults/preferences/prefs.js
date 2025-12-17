@@ -1,6 +1,12 @@
 // Default preferences for Add Items from Text plugin
+pref("extensions.zotero.additemsfromtext.llmProvider", "gemini");
 pref("extensions.zotero.additemsfromtext.geminiApiKey", "");
 pref("extensions.zotero.additemsfromtext.defaultModel", "gemini-2.0-flash");
+pref("extensions.zotero.additemsfromtext.openaiBaseUrl", "https://api.openai.com/v1");
+pref("extensions.zotero.additemsfromtext.openaiApiKey", "");
+pref("extensions.zotero.additemsfromtext.openaiModel", "gpt-4o-mini");
+pref("extensions.zotero.additemsfromtext.ollamaBaseUrl", "http://localhost:11434");
+pref("extensions.zotero.additemsfromtext.ollamaModel", "llama3.2");
 pref("extensions.zotero.additemsfromtext.autoValidate", true);
 pref("extensions.zotero.additemsfromtext.showPreview", true);
 pref("extensions.zotero.additemsfromtext.indexValidate", true);

@@ -1,8 +1,36 @@
 // Preferences script for Add Items from Text plugin
 
 var AddItemsFromTextPrefs = {
+  _getMenulistValue(menulist) {
+    if (!menulist) return '';
+    try {
+      if (menulist.value) return menulist.value;
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const selected = menulist.selectedItem;
+      const v = selected && selected.getAttribute && selected.getAttribute('value');
+      if (v) return v;
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const v = menulist.getAttribute && menulist.getAttribute('value');
+      if (v) return v;
+    } catch (e) {
+      // ignore
+    }
+    return '';
+  },
+
   ensureDefaults() {
     const defaults = {
+      'extensions.zotero.additemsfromtext.llmProvider': 'gemini',
+      'extensions.zotero.additemsfromtext.openaiBaseUrl': 'https://api.openai.com/v1',
+      'extensions.zotero.additemsfromtext.openaiModel': 'gpt-4o-mini',
+      'extensions.zotero.additemsfromtext.ollamaBaseUrl': 'http://localhost:11434',
+      'extensions.zotero.additemsfromtext.ollamaModel': 'llama3.2',
       'extensions.zotero.additemsfromtext.indexLoc': true,
       'extensions.zotero.additemsfromtext.indexGbv': true,
       'extensions.zotero.additemsfromtext.gbvSruUrl': 'https://sru.k10plus.de/gvk',
@@ -23,7 +51,140 @@ var AddItemsFromTextPrefs = {
     }
   },
 
+  _setHidden(el, hidden) {
+    if (!el) return;
+    try {
+      if (hidden) {
+        el.setAttribute('hidden', 'true');
+      } else {
+        el.removeAttribute('hidden');
+      }
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  _setMenulistOptions(menulist, values, currentValue) {
+    if (!menulist) return;
+    const menupopup = menulist.querySelector('menupopup');
+    if (!menupopup) return;
+
+    while (menupopup.firstChild) {
+      menupopup.removeChild(menupopup.firstChild);
+    }
+
+    const createMenuItem = (label, value) => {
+      try {
+        const item = document.createXULElement('menuitem');
+        item.setAttribute('label', label);
+        item.setAttribute('value', value);
+        return item;
+      } catch (e) {
+        const item = document.createElement('menuitem');
+        item.setAttribute('label', label);
+        item.setAttribute('value', value);
+        return item;
+      }
+    };
+
+    const unique = [];
+    const seen = new Set();
+    for (const v of values || []) {
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      unique.push(v);
+    }
+
+    const maybeCurrent = (currentValue || '').trim();
+    if (maybeCurrent && !seen.has(maybeCurrent)) {
+      menupopup.appendChild(createMenuItem(maybeCurrent, maybeCurrent));
+      seen.add(maybeCurrent);
+    }
+
+    for (const v of unique) {
+      menupopup.appendChild(createMenuItem(v, v));
+    }
+
+    // Preserve selection if possible; otherwise select first item.
+    const selected = maybeCurrent && seen.has(maybeCurrent) ? maybeCurrent : unique[0] || maybeCurrent || '';
+    if (selected) {
+      try {
+        menulist.value = selected;
+      } catch (e) {
+        // ignore
+      }
+    }
+  },
+
+  _bindMenulistPreference(menulistId, prefName) {
+    const menulist = document.getElementById(menulistId);
+    if (!menulist) return;
+
+    const loadFromPref = () => {
+      try {
+        const v = Zotero.Prefs.get(prefName, true);
+        if (v !== undefined && v !== null && v !== "undefined" && String(v).trim()) {
+          menulist.value = String(v);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    const saveToPref = () => {
+      const v = this._getMenulistValue(menulist);
+      if (!v) return;
+      try {
+        Zotero.Prefs.set(prefName, v, true);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    loadFromPref();
+    // Persist selection changes explicitly (some panes don't auto-bind menulist -> pref).
+    menulist.addEventListener('command', saveToPref);
+    menulist.addEventListener('change', saveToPref);
+    try {
+      const popup = menulist.querySelector('menupopup');
+      if (popup) popup.addEventListener('command', saveToPref);
+    } catch (e) {
+      // ignore
+    }
+    // Ensure pref is set even if the current value comes from default menu items.
+    saveToPref();
+  },
+
+  _filterLikelyLlmModelIds(ids) {
+    const deny = /(embedding|embed|whisper|transcrib|tts|audio|dall[- ]?e|image|vision|moderation|rerank|realtime)/i;
+    return (ids || []).map(String).filter((s) => s && !deny.test(s));
+  },
+
+  updateProviderVisibility() {
+    const providerList = document.getElementById('add-items-from-text-llm-provider');
+    const provider = this._getMenulistValue(providerList) || Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
+
+    const geminiBox = document.getElementById('add-items-from-text-provider-gemini');
+    const openaiBox = document.getElementById('add-items-from-text-provider-openai');
+    const ollamaBox = document.getElementById('add-items-from-text-provider-ollama');
+
+    this._setHidden(geminiBox, provider !== 'gemini');
+    this._setHidden(openaiBox, provider !== 'openai_compatible');
+    this._setHidden(ollamaBox, provider !== 'ollama');
+  },
+
   async refreshModels() {
+    const providerList = document.getElementById('add-items-from-text-llm-provider');
+    const provider = this._getMenulistValue(providerList) || Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
+    if (provider !== 'gemini') {
+      const statusLabel = document.getElementById('add-items-from-text-model-status');
+      if (statusLabel) {
+        statusLabel.value = 'Model refresh is only available for Gemini';
+        statusLabel.style.color = '#666';
+      }
+      return;
+    }
+
     const apiKeyInput = document.getElementById('add-items-from-text-api-key');
     const modelList = document.getElementById('add-items-from-text-model');
     const refreshBtn = document.getElementById('add-items-from-text-refresh-models');
@@ -94,34 +255,9 @@ var AddItemsFromTextPrefs = {
       });
       
       // Clear and rebuild menu
-      const menupopup = modelList.querySelector('menupopup');
-      while (menupopup.firstChild) {
-        menupopup.removeChild(menupopup.firstChild);
-      }
-      
       const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.defaultModel', true) || 'gemini-2.0-flash';
-      let foundCurrent = false;
-      
-      for (const model of textModels) {
-        const modelName = model.name.replace('models/', '');
-        const menuitem = document.createXULElement('menuitem');
-        menuitem.setAttribute('label', model.displayName || modelName);
-        menuitem.setAttribute('value', modelName);
-        menupopup.appendChild(menuitem);
-        
-        if (modelName === currentModel) {
-          foundCurrent = true;
-        }
-      }
-      
-      // Set current value
-      if (foundCurrent) {
-        modelList.value = currentModel;
-      } else if (textModels.length > 0) {
-        const firstModel = textModels[0].name.replace('models/', '');
-        modelList.value = firstModel;
-        Zotero.Prefs.set('extensions.zotero.additemsfromtext.defaultModel', firstModel, true);
-      }
+      const values = textModels.map(m => m.name.replace('models/', '')).filter(Boolean);
+      this._setMenulistOptions(modelList, values, currentModel);
       
       statusLabel.value = 'Found ' + textModels.length + ' models';
       statusLabel.style.color = '#008800';
@@ -136,10 +272,183 @@ var AddItemsFromTextPrefs = {
   }
 };
 
-window.addEventListener('load', () => {
+AddItemsFromTextPrefs.refreshOpenAIModels = async function refreshOpenAIModels() {
+  const providerList = document.getElementById('add-items-from-text-llm-provider');
+  const provider = this._getMenulistValue(providerList) || Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
+  if (provider !== 'openai_compatible') return;
+
+  const baseUrlInput = document.getElementById('add-items-from-text-openai-base-url');
+  const apiKeyInput = document.getElementById('add-items-from-text-openai-api-key');
+  const modelList = document.getElementById('add-items-from-text-openai-model');
+  const refreshBtn = document.getElementById('add-items-from-text-refresh-openai-models');
+  const statusLabel = document.getElementById('add-items-from-text-openai-model-status');
+
+  const baseUrl = (baseUrlInput?.value || Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiBaseUrl', true) || '').replace(/\/+$/, '');
+  const apiKey = (apiKeyInput?.value || Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiApiKey', true) || '').trim();
+
+  if (!baseUrl) {
+    statusLabel.value = 'Please enter a Base URL first';
+    statusLabel.style.color = '#cc0000';
+    return;
+  }
+
+  refreshBtn.disabled = true;
+  statusLabel.value = 'Loading models...';
+  statusLabel.style.color = '#666';
+
   try {
-    AddItemsFromTextPrefs.ensureDefaults();
+    const url = baseUrl + '/models';
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+
+    const response = await Zotero.HTTP.request('GET', url, {
+      headers,
+      responseType: 'json',
+      successCodes: [200, 400, 401, 403, 404, 429, 500, 502, 503, 504],
+    });
+
+    if (response.status !== 200) {
+      throw new Error('API request failed: ' + response.status);
+    }
+
+    let data = response.response;
+    if (typeof data === 'string') data = JSON.parse(data);
+
+    const models = Array.isArray(data?.data) ? data.data : [];
+    const allIds = models.map(m => m?.id).filter(Boolean);
+    const ids = this._filterLikelyLlmModelIds(allIds);
+    const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiModel', true) || '';
+    this._setMenulistOptions(modelList, ids, currentModel);
+
+    statusLabel.value = 'Found ' + ids.length + ' models';
+    statusLabel.style.color = '#008800';
+  } catch (e) {
+    Zotero.debug('Add Items from Text: Error refreshing OpenAI-compatible models: ' + e);
+    statusLabel.value = 'Error: ' + (e.message || 'Failed to load');
+    statusLabel.style.color = '#cc0000';
+  } finally {
+    refreshBtn.disabled = false;
+  }
+};
+
+AddItemsFromTextPrefs.refreshOllamaModels = async function refreshOllamaModels() {
+  const providerList = document.getElementById('add-items-from-text-llm-provider');
+  const provider = this._getMenulistValue(providerList) || Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
+  if (provider !== 'ollama') return;
+
+  const baseUrlInput = document.getElementById('add-items-from-text-ollama-base-url');
+  const modelList = document.getElementById('add-items-from-text-ollama-model');
+  const refreshBtn = document.getElementById('add-items-from-text-refresh-ollama-models');
+  const statusLabel = document.getElementById('add-items-from-text-ollama-model-status');
+
+  const baseUrl = (baseUrlInput?.value || Zotero.Prefs.get('extensions.zotero.additemsfromtext.ollamaBaseUrl', true) || '').replace(/\/+$/, '');
+
+  if (!baseUrl) {
+    statusLabel.value = 'Please enter a Base URL first';
+    statusLabel.style.color = '#cc0000';
+    return;
+  }
+
+  refreshBtn.disabled = true;
+  statusLabel.value = 'Loading models...';
+  statusLabel.style.color = '#666';
+
+  try {
+    const url = baseUrl + '/api/tags';
+    const response = await Zotero.HTTP.request('GET', url, {
+      headers: { 'Content-Type': 'application/json' },
+      responseType: 'json',
+      successCodes: [200, 400, 404, 429, 500, 502, 503, 504],
+    });
+
+    if (response.status !== 200) {
+      throw new Error('API request failed: ' + response.status);
+    }
+
+    let data = response.response;
+    if (typeof data === 'string') data = JSON.parse(data);
+
+    const models = Array.isArray(data?.models) ? data.models : [];
+    const allNames = models.map(m => m?.name).filter(Boolean);
+    // Drop common embedding-only models
+    const names = allNames.filter((n) => !/(embed|embedding)/i.test(String(n)));
+    const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.ollamaModel', true) || '';
+    this._setMenulistOptions(modelList, names, currentModel);
+
+    statusLabel.value = 'Found ' + names.length + ' models';
+    statusLabel.style.color = '#008800';
+  } catch (e) {
+    Zotero.debug('Add Items from Text: Error refreshing Ollama models: ' + e);
+    statusLabel.value = 'Error: ' + (e.message || 'Failed to load');
+    statusLabel.style.color = '#cc0000';
+  } finally {
+    refreshBtn.disabled = false;
+  }
+};
+
+AddItemsFromTextPrefs.init = function init() {
+  try {
+    this.ensureDefaults();
+    this.updateProviderVisibility();
+
+    // Preference bindings can apply after script execution; retry a few times.
+    setTimeout(() => this.updateProviderVisibility(), 0);
+    setTimeout(() => this.updateProviderVisibility(), 50);
+    setTimeout(() => this.updateProviderVisibility(), 250);
+
+    const providerList = document.getElementById('add-items-from-text-llm-provider');
+    if (providerList) {
+      providerList.addEventListener('command', () => this.updateProviderVisibility());
+      providerList.addEventListener('change', () => this.updateProviderVisibility());
+    }
+
+    this._bindMenulistPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
+    this._bindMenulistPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
+    this._bindMenulistPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
+
+    // Some preference panes apply the bound preference without firing DOM events.
+    // Keep the UI in sync by watching the underlying pref while the pane is open.
+    if (this._providerWatchTimer) {
+      clearInterval(this._providerWatchTimer);
+      this._providerWatchTimer = null;
+    }
+    this._lastProviderValue = null;
+    this._providerWatchTimer = setInterval(() => {
+      try {
+        const v = Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
+        if (v !== this._lastProviderValue) {
+          this._lastProviderValue = v;
+          this.updateProviderVisibility();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 200);
+
+    window.addEventListener('unload', () => {
+      try {
+        if (this._providerWatchTimer) clearInterval(this._providerWatchTimer);
+        this._providerWatchTimer = null;
+      } catch (e) {
+        // ignore
+      }
+    }, { once: true });
   } catch (e) {
     Zotero.debug('Add Items from Text: Error initializing defaults: ' + e);
+  }
+};
+
+try {
+  // Run immediately in case the document is already loaded when this script is injected.
+  AddItemsFromTextPrefs.init();
+} catch (e) {
+  // ignore
+}
+
+window.addEventListener('load', () => {
+  try {
+    AddItemsFromTextPrefs.init();
+  } catch (e) {
+    // ignore
   }
 });
