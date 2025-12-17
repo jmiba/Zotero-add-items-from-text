@@ -513,24 +513,53 @@ export class LLMService {
       throw new Error(errMsg ? `${status}: ${errMsg}` : `HTTP ${status}`);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anyData: any = data;
-    const text = anyData?.output_text;
-    if (typeof text === "string" && text.trim()) return text;
+    const extracted = LLMService.extractTextFromOpenAIResponses(data);
+    if (extracted) return extracted;
 
-    const contentItems = anyData?.output?.[0]?.content;
-    if (Array.isArray(contentItems)) {
-      const isOutputTextItem = (value: unknown): value is { type: "output_text"; text: string } => {
-        if (!value || typeof value !== "object") return false;
-        const record = value as Record<string, unknown>;
-        return record.type === "output_text" && typeof record.text === "string";
-      };
+    Zotero.debug(`Add Items from Text: Unexpected OpenAI responses payload: ${LLMService.debugResponseBody(raw)}`);
+    throw new Error("Invalid response format from OpenAI responses endpoint");
+  }
 
-      const outputText = contentItems.find(isOutputTextItem)?.text;
-      if (typeof outputText === "string" && outputText.trim()) return outputText;
+  private static extractTextFromOpenAIResponses(data: unknown): string | null {
+    if (typeof data === "string") {
+      const trimmed = data.trim();
+      return trimmed ? trimmed : null;
+    }
+    if (!data || typeof data !== "object") return null;
+
+    const record = data as Record<string, unknown>;
+    const top = record.output_text;
+    if (typeof top === "string" && top.trim()) return top;
+
+    const output = record.output;
+    if (!Array.isArray(output)) return null;
+
+    const extractFromContentArray = (content: unknown[]): string | null => {
+      for (const item of content) {
+        if (typeof item === "string" && item.trim()) return item;
+        if (!item || typeof item !== "object") continue;
+        const itemRec = item as Record<string, unknown>;
+        const text = itemRec.text;
+        if (typeof text === "string" && text.trim()) return text;
+      }
+      return null;
+    };
+
+    for (const outItem of output) {
+      if (!outItem || typeof outItem !== "object") continue;
+      const outRec = outItem as Record<string, unknown>;
+
+      const itemText = outRec.output_text;
+      if (typeof itemText === "string" && itemText.trim()) return itemText;
+
+      const content = outRec.content;
+      if (Array.isArray(content)) {
+        const fromContent = extractFromContentArray(content);
+        if (fromContent) return fromContent;
+      }
     }
 
-    throw new Error("Invalid response format from OpenAI responses endpoint");
+    return null;
   }
 
   private async makeOllamaRequest(prompt: string): Promise<string> {
