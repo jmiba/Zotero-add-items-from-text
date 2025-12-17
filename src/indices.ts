@@ -1110,6 +1110,20 @@ export class IndexValidationService {
         updated = applyPatch(updated, best.patch, prefs.enrichFromIndexes, forceOverwrite);
       }
 
+      // After applying the best match, fill any remaining blank fields from other validated matches.
+      // This only fills missing data; it does not overwrite existing values.
+      if (prefs.enrichFromIndexes) {
+        const validatedWithPatch = matches
+          .filter((m): m is IndexMatch & { patch: Partial<ExtractedReference> } => m.status === "validated" && !!m.patch)
+          .slice()
+          .sort((a, b) => b.score - a.score);
+
+        for (const m of validatedWithPatch) {
+          if (m === best) continue;
+          updated = applyPatch(updated, m.patch, true, false);
+        }
+      }
+
       mergedRefs.push(updated);
       validations.push(validation);
     }

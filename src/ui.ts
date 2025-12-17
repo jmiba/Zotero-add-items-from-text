@@ -393,7 +393,10 @@ export class UIService {
       "fill",
       "currentColor"
     );
-    (button.style as unknown as CSSStyleDeclaration).setProperty("fill-opacity", "1");
+    // Slightly reduce opacity so the icon blends with the toolbar background:
+    // this makes it lighter in light mode and darker in dark mode, while still
+    // respecting Zotero's various active/inactive window states via currentColor.
+    (button.style as unknown as CSSStyleDeclaration).setProperty("fill-opacity", "0.95");
     // Ensure we don't render a label next to the icon
     button.setAttribute("label", "");
     button.textContent = "";
