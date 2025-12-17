@@ -47,7 +47,7 @@ Seetings dialog:
 
 ![Plugin settings](image-1.png)
 
-Text input:
+Input for unstructured text containing references or bibliographic data:
 
 ![TExt input area](image-2.png)
 
@@ -55,7 +55,7 @@ Extraction preview:
 
 ![Extracted and validated items](image-3.png)
 
-Items added to library:
+Items added to the Zotero library:
 
 ![Items in Zotero library](image-4.png)
 
