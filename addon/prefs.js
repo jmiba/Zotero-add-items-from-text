@@ -20,3 +20,7 @@ pref("extensions.zotero.additemsfromtext.indexLoc", true);
 pref("extensions.zotero.additemsfromtext.indexGbv", true);
 pref("extensions.zotero.additemsfromtext.gbvSruUrl", "https://sru.k10plus.de/gvk");
 pref("extensions.zotero.additemsfromtext.indexWikidata", true);
+// Hidden model caches for provider settings UI (stored as JSON strings)
+pref("extensions.zotero.additemsfromtext._modelCacheGemini", "{\"updatedAt\":0,\"models\":[]}");
+pref("extensions.zotero.additemsfromtext._modelCacheOpenAICompatible", "{}");
+pref("extensions.zotero.additemsfromtext._modelCacheOllama", "{}");

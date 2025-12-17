@@ -1,5 +1,5 @@
 /**
- * Google Gemini API integration for reference extraction
+ * LLM integration (Gemini/OpenAI-compatible/Ollama) for reference extraction
  */
 
 import { config } from "./config";
@@ -43,10 +43,13 @@ export interface ValidationResult {
   suggestions: string[];
 }
 
-export interface GeminiResponse {
+export interface ExtractionResponse {
   references: ExtractedReference[];
   rawBibtex?: string;
 }
+
+// Backwards-compatible alias (the file originally only supported Gemini).
+export type GeminiResponse = ExtractionResponse;
 
 const EXTRACTION_PROMPT = `You are a bibliographic reference extraction expert. Analyze the following text and extract ALL literature references found within it.
 
@@ -517,7 +520,13 @@ export class LLMService {
 
     const contentItems = anyData?.output?.[0]?.content;
     if (Array.isArray(contentItems)) {
-      const outputText = contentItems.find((c: any) => c?.type === "output_text")?.text;
+      const isOutputTextItem = (value: unknown): value is { type: "output_text"; text: string } => {
+        if (!value || typeof value !== "object") return false;
+        const record = value as Record<string, unknown>;
+        return record.type === "output_text" && typeof record.text === "string";
+      };
+
+      const outputText = contentItems.find(isOutputTextItem)?.text;
       if (typeof outputText === "string" && outputText.trim()) return outputText;
     }
 
@@ -597,6 +606,44 @@ export class LLMService {
     }
   }
 
+  private static coerceValidationResults(parsed: unknown): ValidationResult[] | null {
+    const normalize = (value: unknown): ValidationResult => {
+      if (!value || typeof value !== "object") {
+        return { isValid: true, errors: [], warnings: ["Invalid validation result format"], suggestions: [] };
+      }
+      const record = value as Record<string, unknown>;
+      const isValid = typeof record.isValid === "boolean" ? record.isValid : true;
+      const asStringArray = (v: unknown): string[] =>
+        Array.isArray(v) ? v.map((x) => String(x)).filter((s) => s.trim()) : [];
+
+      return {
+        isValid,
+        errors: asStringArray(record.errors),
+        warnings: asStringArray(record.warnings),
+        suggestions: asStringArray(record.suggestions),
+      };
+    };
+
+    if (Array.isArray(parsed)) {
+      return parsed.map(normalize);
+    }
+
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      const candidates = [
+        record.validationResults,
+        record.validations,
+        record.results,
+        record.items,
+      ];
+      for (const c of candidates) {
+        if (Array.isArray(c)) return c.map(normalize);
+      }
+    }
+
+    return null;
+  }
+
   async validateReferences(
     references: ExtractedReference[]
   ): Promise<ValidationResult[]> {
@@ -604,7 +651,10 @@ export class LLMService {
     const responseText = await this.makeRequest(prompt);
 
     try {
-      return JSON.parse(responseText);
+      const parsed = LLMService.parseJsonLenient(responseText);
+      const results = LLMService.coerceValidationResults(parsed);
+      if (results) return results;
+      throw new Error("Unexpected validation response shape");
     } catch (error) {
       Zotero.logError(error as Error);
       // Return default validation if parsing fails

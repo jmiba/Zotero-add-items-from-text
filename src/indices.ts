@@ -179,9 +179,8 @@ async function requestJsonWithRetry(
     const status = response.status;
     const data = (() => {
       // Zotero can return parsed JSON or a JSON string depending on internal plumbing
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const responseAny: any = response as any;
-      const body: any =
+      const responseAny = response as unknown as { response?: unknown; responseText?: unknown };
+      const body =
         responseAny.response !== undefined && responseAny.response !== null && responseAny.response !== ""
           ? responseAny.response
           : responseAny.responseText;
