@@ -3,43 +3,134 @@
       id="add-items-from-text-prefs-container">
 
   <groupbox>
-    <label><html:h2>Google Gemini API</html:h2></label>
-    
+    <label><html:h2>AI Provider</html:h2></label>
+
     <hbox align="center">
-      <label value="API Key:" style="width: 80px;" />
-      <html:input type="password" id="add-items-from-text-api-key" 
-                  preference="extensions.zotero.additemsfromtext.geminiApiKey"
-                  style="flex: 1; margin-left: 8px;" />
-    </hbox>
-    <hbox style="margin-top: 5px; margin-left: 88px; align-items: center;">
-      <label value="Get your API key from" style="font-size: 11px; color: #666; margin-right: 4px;" />
-      <label class="text-link"
-             value="aistudio.google.com/apikey"
-             style="font-size: 11px;"
-             tooltiptext="Open Google AI Studio API keys"
-             onclick="Zotero.launchURL('https://aistudio.google.com/apikey');" />
-    </hbox>
-    
-    <hbox align="center" style="margin-top: 10px;">
-      <label value="Model:" style="width: 80px;" />
-      <menulist id="add-items-from-text-model" 
-                preference="extensions.zotero.additemsfromtext.defaultModel"
+      <label value="Provider:" style="width: 80px;" />
+      <menulist id="add-items-from-text-llm-provider"
+                preference="extensions.zotero.additemsfromtext.llmProvider"
                 style="margin-left: 8px; min-width: 250px;">
         <menupopup>
-          <menuitem label="Gemini 2.0 Flash (Recommended)" value="gemini-2.0-flash"/>
-          <menuitem label="Gemini 2.0 Flash Lite (Faster)" value="gemini-2.0-flash-lite"/>
-          <menuitem label="Gemini 2.5 Flash (Stronger, can 503 more)" value="gemini-2.5-flash"/>
-          <menuitem label="Gemini 2.5 Flash Lite (Stronger/Faster)" value="gemini-2.5-flash-lite"/>
+          <menuitem label="Google Gemini" value="gemini"/>
+          <menuitem label="OpenAI-compatible (OpenAI / LM Studio / etc.)" value="openai_compatible"/>
+          <menuitem label="Ollama (local)" value="ollama"/>
         </menupopup>
       </menulist>
-      <button id="add-items-from-text-refresh-models" 
-              label="Refresh Models" 
-              oncommand="AddItemsFromTextPrefs.refreshModels();"
-              style="margin-left: 8px;" />
     </hbox>
-    <hbox style="margin-top: 5px; margin-left: 88px;">
-      <label id="add-items-from-text-model-status" value="" style="font-size: 11px; color: #666;" />
-    </hbox>
+
+    <vbox id="add-items-from-text-provider-gemini" style="margin-top: 10px;">
+      <label><html:h3>Google Gemini</html:h3></label>
+
+      <hbox align="center">
+        <label value="API Key:" style="width: 80px;" />
+        <html:input type="password" id="add-items-from-text-api-key"
+                    preference="extensions.zotero.additemsfromtext.geminiApiKey"
+                    style="flex: 1; margin-left: 8px;" />
+      </hbox>
+      <hbox style="margin-top: 5px; margin-left: 88px; align-items: center;">
+        <label value="Get your API key from" style="font-size: 11px; color: #666; margin-right: 4px;" />
+        <label class="text-link"
+               value="aistudio.google.com/apikey"
+               style="font-size: 11px;"
+               tooltiptext="Open Google AI Studio API keys"
+               onclick="Zotero.launchURL('https://aistudio.google.com/apikey');" />
+      </hbox>
+
+      <hbox align="center" style="margin-top: 10px;">
+        <label value="Model:" style="width: 80px;" />
+        <menulist id="add-items-from-text-model"
+                  preference="extensions.zotero.additemsfromtext.defaultModel"
+                  style="margin-left: 8px; min-width: 250px;">
+          <menupopup>
+            <menuitem label="Gemini 2.0 Flash (Recommended)" value="gemini-2.0-flash"/>
+            <menuitem label="Gemini 2.0 Flash Lite (Faster)" value="gemini-2.0-flash-lite"/>
+            <menuitem label="Gemini 2.5 Flash (Stronger, can 503 more)" value="gemini-2.5-flash"/>
+            <menuitem label="Gemini 2.5 Flash Lite (Stronger/Faster)" value="gemini-2.5-flash-lite"/>
+          </menupopup>
+        </menulist>
+        <button id="add-items-from-text-refresh-models"
+                label="Refresh Models"
+                oncommand="AddItemsFromTextPrefs.refreshModels();"
+                style="margin-left: 8px;" />
+      </hbox>
+      <hbox style="margin-top: 5px; margin-left: 88px;">
+        <label id="add-items-from-text-model-status" value="" style="font-size: 11px; color: #666;" />
+      </hbox>
+    </vbox>
+
+    <vbox id="add-items-from-text-provider-openai" style="margin-top: 10px;" hidden="true">
+      <label><html:h3>OpenAI-compatible</html:h3></label>
+
+      <hbox align="center">
+        <label value="Base URL:" style="width: 80px;" />
+        <html:input id="add-items-from-text-openai-base-url"
+                    preference="extensions.zotero.additemsfromtext.openaiBaseUrl"
+                    placeholder="https://api.openai.com/v1"
+                    style="flex: 1; margin-left: 8px;" />
+      </hbox>
+      <hbox style="margin-top: 5px; margin-left: 88px;">
+        <label value="Examples: https://api.openai.com/v1  •  http://localhost:1234/v1 (LM Studio)" style="font-size: 11px; color: #666;" />
+      </hbox>
+
+      <hbox align="center" style="margin-top: 10px;">
+        <label value="API Key:" style="width: 80px;" />
+        <html:input type="password"
+                    id="add-items-from-text-openai-api-key"
+                    preference="extensions.zotero.additemsfromtext.openaiApiKey"
+                    style="flex: 1; margin-left: 8px;" />
+      </hbox>
+
+      <hbox align="center" style="margin-top: 10px;">
+        <label value="Model:" style="width: 80px;" />
+        <menulist id="add-items-from-text-openai-model"
+                  preference="extensions.zotero.additemsfromtext.openaiModel"
+                  style="margin-left: 8px; min-width: 250px;">
+          <menupopup>
+            <menuitem label="gpt-4o-mini" value="gpt-4o-mini"/>
+          </menupopup>
+        </menulist>
+        <button id="add-items-from-text-refresh-openai-models"
+                label="Refresh Models"
+                oncommand="AddItemsFromTextPrefs.refreshOpenAIModels();"
+                style="margin-left: 8px;" />
+      </hbox>
+      <hbox style="margin-top: 5px; margin-left: 88px;">
+        <label id="add-items-from-text-openai-model-status" value="" style="font-size: 11px; color: #666;" />
+      </hbox>
+    </vbox>
+
+    <vbox id="add-items-from-text-provider-ollama" style="margin-top: 10px;" hidden="true">
+      <label><html:h3>Ollama</html:h3></label>
+
+      <hbox align="center">
+        <label value="Base URL:" style="width: 80px;" />
+        <html:input id="add-items-from-text-ollama-base-url"
+                    preference="extensions.zotero.additemsfromtext.ollamaBaseUrl"
+                    placeholder="http://localhost:11434"
+                    style="flex: 1; margin-left: 8px;" />
+      </hbox>
+      <hbox style="margin-top: 5px; margin-left: 88px;">
+        <label value="Default: http://localhost:11434" style="font-size: 11px; color: #666;" />
+      </hbox>
+
+      <hbox align="center" style="margin-top: 10px;">
+        <label value="Model:" style="width: 80px;" />
+        <menulist id="add-items-from-text-ollama-model"
+                  preference="extensions.zotero.additemsfromtext.ollamaModel"
+                  style="margin-left: 8px; min-width: 250px;">
+          <menupopup>
+            <menuitem label="llama3.2" value="llama3.2"/>
+          </menupopup>
+        </menulist>
+        <button id="add-items-from-text-refresh-ollama-models"
+                label="Refresh Models"
+                oncommand="AddItemsFromTextPrefs.refreshOllamaModels();"
+                style="margin-left: 8px;" />
+      </hbox>
+      <hbox style="margin-top: 5px; margin-left: 88px;">
+        <label id="add-items-from-text-ollama-model-status" value="" style="font-size: 11px; color: #666;" />
+      </hbox>
+    </vbox>
   </groupbox>
   
   <groupbox>
@@ -129,7 +220,7 @@
   <groupbox>
     <label><html:h2>About</html:h2></label>
     <description>
-      Add Items from Text uses Google Gemini AI to extract bibliographic references
+      Add Items from Text uses a configurable AI provider to extract bibliographic references
       from unstructured text and import them into your Zotero library.
     </description>
     <description style="margin-top: 5px; font-size: 11px; color: #666;">

@@ -108,10 +108,21 @@ export interface GeminiModel {
   supportedGenerationMethods?: string[];
 }
 
-export class GeminiService {
-  private apiKey: string;
-  private baseUrl: string;
-  private model: string;
+export type LLMProvider = "gemini" | "openai_compatible" | "ollama";
+
+export class LLMService {
+  private provider: LLMProvider;
+
+  private geminiApiKey: string;
+  private geminiBaseUrl: string;
+  private geminiModel: string;
+
+  private openaiBaseUrl: string;
+  private openaiApiKey: string;
+  private openaiModel: string;
+
+  private ollamaBaseUrl: string;
+  private ollamaModel: string;
 
   private static stripCodeFences(text: string): string {
     // Some models wrap JSON in ```json ... ``` despite responseMimeType.
@@ -139,21 +150,21 @@ export class GeminiService {
   }
 
   private static parseJsonLenient(text: string): unknown {
-    const cleaned = GeminiService.stripCodeFences(text);
+    const cleaned = LLMService.stripCodeFences(text);
     try {
       return JSON.parse(cleaned);
     } catch {
       // continue
     }
 
-    const extracted = GeminiService.extractFirstJsonObject(cleaned) || cleaned;
+    const extracted = LLMService.extractFirstJsonObject(cleaned) || cleaned;
     try {
       return JSON.parse(extracted);
     } catch {
       // continue
     }
 
-    const repaired = GeminiService.repairCommonJsonIssues(extracted);
+    const repaired = LLMService.repairCommonJsonIssues(extracted);
     return JSON.parse(repaired);
   }
 
@@ -197,16 +208,26 @@ export class GeminiService {
   }
 
   constructor() {
-    this.apiKey = PreferencesManager.getApiKey();
-    this.baseUrl = config.gemini.baseUrl;
-    this.model = PreferencesManager.get("defaultModel");
+    this.provider = "gemini";
+    this.geminiApiKey = "";
+    this.geminiBaseUrl = config.gemini.baseUrl;
+    this.geminiModel = config.gemini.model;
+
+    this.openaiBaseUrl = "";
+    this.openaiApiKey = "";
+    this.openaiModel = "";
+
+    this.ollamaBaseUrl = "";
+    this.ollamaModel = "";
+
+    this.updateFromPreferences();
   }
 
   /**
    * Fetch available models from Gemini API
    */
   static async fetchAvailableModels(apiKey?: string): Promise<GeminiModel[]> {
-    const key = apiKey || PreferencesManager.getApiKey();
+    const key = apiKey || PreferencesManager.get("geminiApiKey");
     
     if (!key) {
       throw new Error("API key required to fetch models");
@@ -272,17 +293,64 @@ export class GeminiService {
     }
   }
 
-  private async makeRequest(prompt: string): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error("Gemini API key not configured. Please set it in preferences.");
+  private updateFromPreferences(): void {
+    this.provider = PreferencesManager.get("llmProvider");
+
+    this.geminiApiKey = PreferencesManager.get("geminiApiKey");
+    this.geminiBaseUrl = config.gemini.baseUrl;
+    this.geminiModel = PreferencesManager.get("defaultModel");
+
+    this.openaiBaseUrl = (PreferencesManager.get("openaiBaseUrl") || "").trim();
+    this.openaiApiKey = PreferencesManager.get("openaiApiKey");
+    this.openaiModel = (PreferencesManager.get("openaiModel") || "").trim();
+
+    this.ollamaBaseUrl = (PreferencesManager.get("ollamaBaseUrl") || "").trim();
+    this.ollamaModel = (PreferencesManager.get("ollamaModel") || "").trim();
+  }
+
+  private static normalizeBaseUrl(url: string): string {
+    return url.replace(/\/+$/, "");
+  }
+
+  private async requestJson(
+    method: "GET" | "POST",
+    url: string,
+    options: { headers?: Record<string, string>; body?: unknown; timeout?: number } = {}
+  ): Promise<{ status: number; data: unknown; raw: unknown }> {
+    const response = await Zotero.HTTP.request(method, url, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      responseType: "json",
+      timeout: options.timeout ?? 60000,
+      successCodes: [200, 400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any = (response as any).response;
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        // keep string
+      }
+    }
+    return { status: response.status, data, raw: response };
+  }
+
+  private async makeGeminiRequest(prompt: string): Promise<string> {
+    if (!this.geminiApiKey) {
+      throw new Error("Gemini API key not configured. Please set it in Preferences → Add Items from Text.");
     }
 
     // Refresh model setting in case it changed
-    this.model = PreferencesManager.get("defaultModel");
+    this.geminiModel = PreferencesManager.get("defaultModel");
     
-    const url = `${this.baseUrl}/${this.model}:generateContent?key=${this.apiKey}`;
+    const url = `${this.geminiBaseUrl}/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
     
-    Zotero.debug(`Add Items from Text: Making request to ${this.baseUrl}/${this.model}`);
+    Zotero.debug(`Add Items from Text: Making request to Gemini model ${this.geminiModel}`);
 
     const requestBody = {
       contents: [
@@ -319,7 +387,7 @@ export class GeminiService {
     
     if (status !== 200) {
       Zotero.debug(
-        `Add Items from Text: API error ${status}: ${GeminiService.debugResponseBody(
+        `Add Items from Text: API error ${status}: ${LLMService.debugResponseBody(
           response
         )}`
       );
@@ -357,30 +425,175 @@ export class GeminiService {
     return data.candidates[0].content.parts[0].text;
   }
 
+  private async makeOpenAICompatibleRequest(prompt: string): Promise<string> {
+    const baseUrl = LLMService.normalizeBaseUrl(this.openaiBaseUrl);
+    if (!baseUrl) {
+      throw new Error("OpenAI-compatible base URL not configured. Please set it in Preferences → Add Items from Text.");
+    }
+    if (!this.openaiModel) {
+      throw new Error("OpenAI-compatible model not configured. Please set it in Preferences → Add Items from Text.");
+    }
+
+    const isOpenAIHosted = (() => {
+      try {
+        const host = new URL(baseUrl).hostname.toLowerCase();
+        return host === "api.openai.com";
+      } catch {
+        return false;
+      }
+    })();
+
+    const headers: Record<string, string> = {};
+    if (this.openaiApiKey && this.openaiApiKey.trim()) {
+      headers.Authorization = `Bearer ${this.openaiApiKey.trim()}`;
+    }
+
+    if (isOpenAIHosted) {
+      return this.makeOpenAIResponsesRequest(baseUrl, headers, prompt);
+    }
+
+    return this.makeOpenAIChatCompletionsRequest(baseUrl, headers, prompt);
+  }
+
+  private async makeOpenAIChatCompletionsRequest(baseUrl: string, headers: Record<string, string>, prompt: string): Promise<string> {
+    const url = `${baseUrl}/chat/completions`;
+    const requestBody = {
+      model: this.openaiModel,
+      // Note: some models/endpoints reject non-default temperature values; omit unless user-configured.
+      messages: [
+        {
+          role: "system",
+          content: "Return only valid JSON. Do not wrap the response in markdown or code fences.",
+        },
+        { role: "user", content: prompt },
+      ],
+    };
+
+    const { status, data, raw } = await this.requestJson("POST", url, { headers, body: requestBody });
+    if (status !== 200) {
+      Zotero.debug(`Add Items from Text: OpenAI-compatible API error ${status}: ${LLMService.debugResponseBody(raw)}`);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errMsg = (data as any)?.error?.message;
+      throw new Error(errMsg ? `${status}: ${errMsg}` : `HTTP ${status}`);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyData: any = data;
+    const content = anyData?.choices?.[0]?.message?.content ?? anyData?.choices?.[0]?.text;
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("Invalid response format from OpenAI-compatible endpoint");
+    }
+    return content;
+  }
+
+  private async makeOpenAIResponsesRequest(baseUrl: string, headers: Record<string, string>, prompt: string): Promise<string> {
+    const url = `${baseUrl}/responses`;
+    const requestBody = {
+      model: this.openaiModel,
+      input: [
+        {
+          role: "system",
+          content: "Return only valid JSON. Do not wrap the response in markdown or code fences.",
+        },
+        { role: "user", content: prompt },
+      ],
+      text: { format: { type: "json_object" } },
+    };
+
+    const { status, data, raw } = await this.requestJson("POST", url, { headers, body: requestBody });
+    if (status !== 200) {
+      Zotero.debug(`Add Items from Text: OpenAI responses API error ${status}: ${LLMService.debugResponseBody(raw)}`);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errMsg = (data as any)?.error?.message;
+      throw new Error(errMsg ? `${status}: ${errMsg}` : `HTTP ${status}`);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyData: any = data;
+    const text = anyData?.output_text;
+    if (typeof text === "string" && text.trim()) return text;
+
+    const contentItems = anyData?.output?.[0]?.content;
+    if (Array.isArray(contentItems)) {
+      const outputText = contentItems.find((c: any) => c?.type === "output_text")?.text;
+      if (typeof outputText === "string" && outputText.trim()) return outputText;
+    }
+
+    throw new Error("Invalid response format from OpenAI responses endpoint");
+  }
+
+  private async makeOllamaRequest(prompt: string): Promise<string> {
+    const baseUrl = LLMService.normalizeBaseUrl(this.ollamaBaseUrl);
+    if (!baseUrl) {
+      throw new Error("Ollama base URL not configured. Please set it in Preferences → Add Items from Text.");
+    }
+    if (!this.ollamaModel) {
+      throw new Error("Ollama model not configured. Please set it in Preferences → Add Items from Text.");
+    }
+
+    const url = `${baseUrl}/api/chat`;
+    const requestBody = {
+      model: this.ollamaModel,
+      stream: false,
+      format: "json",
+      options: { temperature: 0.2 },
+      messages: [
+        {
+          role: "system",
+          content: "Return only valid JSON. Do not wrap the response in markdown or code fences.",
+        },
+        { role: "user", content: prompt },
+      ],
+    };
+
+    const { status, data, raw } = await this.requestJson("POST", url, { body: requestBody });
+    if (status !== 200) {
+      Zotero.debug(`Add Items from Text: Ollama API error ${status}: ${LLMService.debugResponseBody(raw)}`);
+      throw new Error(`HTTP ${status}`);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyData: any = data;
+    const content = anyData?.message?.content ?? anyData?.response;
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("Invalid response format from Ollama");
+    }
+    return content;
+  }
+
+  private async makeRequest(prompt: string): Promise<string> {
+    this.updateFromPreferences();
+    if (this.provider === "openai_compatible") return this.makeOpenAICompatibleRequest(prompt);
+    if (this.provider === "ollama") return this.makeOllamaRequest(prompt);
+    return this.makeGeminiRequest(prompt);
+  }
+
   async extractReferences(text: string): Promise<GeminiResponse> {
     const prompt = EXTRACTION_PROMPT + text;
     const responseText = await this.makeRequest(prompt);
 
     try {
-      const parsed = GeminiService.parseJsonLenient(responseText) as {
+      const parsed = LLMService.parseJsonLenient(responseText) as {
         references?: ExtractedReference[];
         bibtex?: string;
       };
       return {
         references: (parsed.references || []).map((r) =>
-          GeminiService.normalizeReference(r)
+          LLMService.normalizeReference(r)
         ),
         rawBibtex: parsed.bibtex,
       };
     } catch (error) {
       Zotero.logError(error as Error);
       try {
-        const preview = GeminiService.stripCodeFences(responseText).slice(0, 800);
+        const preview = LLMService.stripCodeFences(responseText).slice(0, 800);
         Zotero.debug(`Add Items from Text: JSON parse failed; response starts with: ${preview}`);
       } catch {
         // ignore
       }
-      throw new Error("Failed to parse Gemini response as JSON");
+      throw new Error("Failed to parse AI response as JSON");
     }
   }
 
@@ -405,6 +618,6 @@ export class GeminiService {
   }
 
   updateApiKey(): void {
-    this.apiKey = PreferencesManager.getApiKey();
+    this.updateFromPreferences();
   }
 }

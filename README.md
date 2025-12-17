@@ -2,12 +2,12 @@
 
 [![DOI](https://zenodo.org/badge/1117708523.svg)](https://doi.org/10.5281/zenodo.17956351)
 
-A Zotero 7 plugin that extracts and imports literature references from unstructured text using Google Gemini AI.
+A Zotero 7 plugin that extracts and imports literature references from unstructured text using a configurable AI provider (Gemini, OpenAI-compatible, or Ollama).
 
 ## Features
 
 - **Toolbar Integration**: Adds an icon-only button next to the identifier lookup tool
-- **AI-Powered Extraction**: Uses Google Gemini to intelligently parse references
+- **AI-Powered Extraction**: Uses a configurable AI provider to intelligently parse references
 - **Multiple Reference Formats**: Handles journal articles, books, book chapters, conference papers, theses, and more
 - **Validation (AI)**: Optional automated validation of extracted bibliographic data
 - **Validation (Indexes)**: Optional checks against Crossref, OpenAlex, lobid (hbz catalog), Library of Congress, GBV/K10Plus (SRU), and Wikidata
@@ -21,10 +21,10 @@ A Zotero 7 plugin that extracts and imports literature references from unstructu
 ```mermaid
 flowchart TD
   A[User clicks toolbar button] --> B[Paste text in dialog]
-  B --> C[Gemini: extract references as JSON]
+  B --> C[AI provider: extract references as JSON]
   C --> D["Normalize fields\n(e.g. year -> date)"]
   D --> E{AI validation enabled?}
-  E -- Yes --> F[Gemini: validate extracted references]
+  E -- Yes --> F[AI provider: validate extracted references]
   E -- No --> G
   F --> G{Index validation enabled?}
   G -- Yes --> H[Crossref/OpenAlex/lobid/LoC/GBV/Wikidata lookup]
@@ -48,9 +48,8 @@ flowchart TD
 
 1. Go to Zotero → Settings (or Preferences on macOS)
 2. Navigate to the "Add Items from Text" tab
-3. Enter your Google Gemini API key
-   - Get a free API key at [Google AI Studio](https://aistudio.google.com/apikey)
-4. Choose a Gemini model (default is `gemini-2.0-flash`)
+3. Choose an AI provider (Gemini / OpenAI-compatible / Ollama)
+4. Configure the provider (API key / base URL / model, depending on provider)
 5. (Optional) Enable bibliographic index validation/enrichment and configure `mailto` values for polite API usage
 
 ## Usage
@@ -111,7 +110,7 @@ npm run watch
 │   ├── index.ts           # Main plugin class
 │   ├── config.ts          # Configuration
 │   ├── preferences.ts     # Preferences management
-│   ├── gemini.ts          # Gemini API integration
+│   ├── gemini.ts          # LLM integration (Gemini/OpenAI-compatible/Ollama)
 │   ├── indices.ts         # Index validation & enrichment (Crossref/OpenAlex/lobid/LoC/GBV/Wikidata)
 │   ├── bibtex.ts          # BibTeX utilities
 │   ├── import.ts          # Zotero import service
@@ -137,7 +136,7 @@ zip -r ../add-items-from-text.xpi *
 
 ## Privacy
 
-This plugin sends your pasted text to Google's Gemini API for processing. If enabled, it also queries bibliographic indexes (Crossref, OpenAlex, lobid, Library of Congress, GBV/K10Plus, Wikidata) using extracted metadata (e.g., title/DOI). No data is stored or shared beyond what's necessary for these API calls. Please review the providers’ terms for more information.
+This plugin sends your pasted text to the configured AI provider for processing (e.g., Google Gemini, an OpenAI-compatible endpoint, or a local Ollama instance). If enabled, it also queries bibliographic indexes (Crossref, OpenAlex, lobid, Library of Congress, GBV/K10Plus, Wikidata) using extracted metadata (e.g., title/DOI). No data is stored or shared beyond what's necessary for these API calls. Please review the providers’ terms for more information.
 
 ## License
 
@@ -150,4 +149,4 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## Acknowledgments
 
 - Built for [Zotero 7](https://www.zotero.org/)
-- Powered by [Google Gemini](https://deepmind.google/technologies/gemini/)
+- Powered by a configurable AI provider (Gemini/OpenAI-compatible/Ollama)

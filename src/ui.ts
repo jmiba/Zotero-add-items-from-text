@@ -257,14 +257,14 @@ export class UIService {
   /**
    * Show API key configuration dialog
    */
-  async showApiKeyDialog(currentKey?: string): Promise<string | null> {
-    const result = { value: currentKey || "" };
+  async showApiKeyDialog(options?: { title?: string; message?: string; currentKey?: string }): Promise<string | null> {
+    const result = { value: options?.currentKey || "" };
     const check = { value: false };
 
     const confirmed = Services.prompt.prompt(
       this.window,
-      "Configure Gemini API Key",
-      "Enter your Google Gemini API key.\nGet one at: https://aistudio.google.com/apikey",
+      options?.title || "Configure API Key",
+      options?.message || "Enter your API key.",
       result,
       null,
       check

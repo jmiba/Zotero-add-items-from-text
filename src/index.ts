@@ -4,7 +4,7 @@
 
 import { config } from "./config";
 import { PreferencesManager } from "./preferences";
-import { GeminiService } from "./gemini";
+import { LLMService } from "./gemini";
 import { ZoteroImportService } from "./import";
 import { UIService } from "./ui";
 import { IndexValidationService } from "./indices";
@@ -84,7 +84,7 @@ class AddItemsFromTextPlugin {
   private rootURI: string = "";
   private initialized: boolean = false;
   private windowListeners: Map<Window, UIService> = new Map();
-  private geminiService: GeminiService | null = null;
+  private llmService: LLMService | null = null;
 
   /**
    * Initialize the plugin
@@ -98,7 +98,7 @@ class AddItemsFromTextPlugin {
 
     Zotero.debug(`${config.addonName}: Initializing v${this.version}`);
 
-    this.geminiService = new GeminiService();
+    this.llmService = new LLMService();
     
     // Register preference pane
     this.registerPreferencePane();
@@ -192,9 +192,14 @@ class AddItemsFromTextPlugin {
     const ui = this.windowListeners.get(window);
     if (!ui) return;
 
-    // Check for API key
-    if (!PreferencesManager.hasApiKey()) {
-      const apiKey = await ui.showApiKeyDialog();
+    // Provider-specific configuration checks
+    const provider = PreferencesManager.get("llmProvider");
+    if (provider === "gemini" && !PreferencesManager.hasApiKey()) {
+      const apiKey = await ui.showApiKeyDialog({
+        title: "Configure Gemini API Key",
+        message: "Enter your Google Gemini API key.\nGet one at: https://aistudio.google.com/apikey",
+        currentKey: PreferencesManager.get("geminiApiKey"),
+      });
       if (!apiKey) {
         ui.showError(
           "API Key Required",
@@ -202,8 +207,31 @@ class AddItemsFromTextPlugin {
         );
         return;
       }
-      PreferencesManager.setApiKey(apiKey);
-      this.geminiService?.updateApiKey();
+      PreferencesManager.set("geminiApiKey", apiKey);
+      this.llmService?.updateApiKey();
+    }
+    if (provider === "openai_compatible") {
+      const baseUrl = (PreferencesManager.get("openaiBaseUrl") || "").trim();
+      const apiKey = (PreferencesManager.get("openaiApiKey") || "").trim();
+      const isLocal =
+        /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(\/|$)/i.test(baseUrl) ||
+        /^http:\/\/\[::1\](?::\d+)?(\/|$)/i.test(baseUrl);
+      if (!isLocal && !apiKey) {
+        const newKey = await ui.showApiKeyDialog({
+          title: "Configure OpenAI-Compatible API Key",
+          message: "Enter your API key for the configured OpenAI-compatible endpoint.\n\nTip: Local endpoints (LM Studio) may not require a key.",
+          currentKey: "",
+        });
+        if (!newKey) {
+          ui.showError(
+            "API Key Required",
+            "An API key is required for this OpenAI-compatible endpoint.\n\nPlease set it in Preferences → Add Items from Text."
+          );
+          return;
+        }
+        PreferencesManager.set("openaiApiKey", newKey);
+        this.llmService?.updateApiKey();
+      }
     }
 
     // Show text input dialog
@@ -221,7 +249,7 @@ class AddItemsFromTextPlugin {
     try {
       // Extract references using Gemini
       progress.update("Extracting references from text...", 20);
-      const response = await this.geminiService!.extractReferences(inputText);
+      const response = await this.llmService!.extractReferences(inputText);
 
       if (!response.references || response.references.length === 0) {
         progress.close();
@@ -241,7 +269,7 @@ class AddItemsFromTextPlugin {
           `Validating ${response.references.length} references...`,
           50
         );
-        validationResults = await this.geminiService!.validateReferences(references);
+        validationResults = await this.llmService!.validateReferences(references);
       }
 
       // Validate/enrich via bibliographic indexes (Crossref/OpenAlex/lobid)
@@ -341,26 +369,28 @@ class AddItemsFromTextPlugin {
       let userMessage = errorMessage;
       let title = "Error Processing References";
       
-      if (errorMessage.includes("503") || errorMessage.includes("Service Unavailable")) {
+      if (PreferencesManager.get("llmProvider") === "gemini" && (errorMessage.includes("503") || errorMessage.includes("Service Unavailable"))) {
         title = "Service Temporarily Unavailable";
         userMessage = "Google's Gemini API is temporarily overloaded (Error 503).\n\nPlease wait a moment and try again.";
       } else if (errorMessage.includes("429") || errorMessage.includes("rate limit") || errorMessage.includes("quota")) {
         title = "Rate Limit Reached";
-        userMessage = "You've hit the API rate limit (Error 429).\n\nPlease wait a minute before trying again, or check your quota at aistudio.google.com";
+        userMessage = "You've hit the API rate limit (Error 429).\n\nPlease wait a moment before trying again, or check your provider account/quota.";
       } else if (errorMessage.includes("401") || errorMessage.includes("403")) {
         title = "Authentication Error";
-        userMessage = "Your API key appears to be invalid or expired.\n\nPlease check your API key in Preferences → Add Items from Text.";
+        userMessage = "Authentication failed (HTTP 401/403).\n\nPlease check your provider settings (API key, base URL, model) in Preferences → Add Items from Text.";
       } else if (errorMessage.includes("404")) {
         title = "Model Not Found";
-        userMessage = "The selected model is not available.\n\nPlease go to Preferences → Add Items from Text and click 'Refresh Models' to update the model list.";
-      } else if (errorMessage.includes("API key")) {
+        userMessage = "The selected model or endpoint was not found (HTTP 404).\n\nPlease check your provider base URL and model in Preferences → Add Items from Text.";
+      } else if (PreferencesManager.get("llmProvider") === "gemini" && errorMessage.toLowerCase().includes("api key")) {
         progress.close();
-        const newKey = await ui.showApiKeyDialog(
-          PreferencesManager.getApiKey()
-        );
+        const newKey = await ui.showApiKeyDialog({
+          title: "Configure Gemini API Key",
+          message: "Enter your Google Gemini API key.\nGet one at: https://aistudio.google.com/apikey",
+          currentKey: PreferencesManager.get("geminiApiKey"),
+        });
         if (newKey) {
-          PreferencesManager.setApiKey(newKey);
-          this.geminiService?.updateApiKey();
+          PreferencesManager.set("geminiApiKey", newKey);
+          this.llmService?.updateApiKey();
           ui.showError(
             "API Key Updated",
             "Your API key has been updated. Please try again."
@@ -381,7 +411,7 @@ class AddItemsFromTextPlugin {
    */
   shutdown(): void {
     this.removeFromAllWindows();
-    this.geminiService = null;
+    this.llmService = null;
     this.initialized = false;
     Zotero.debug(`${config.addonName}: Shutdown complete`);
   }

@@ -5,10 +5,16 @@
 import { config } from "./config";
 
 export interface PluginPreferences {
+  llmProvider: "gemini" | "openai_compatible" | "ollama";
   geminiApiKey: string;
   autoValidate: boolean;
   showPreview: boolean;
   defaultModel: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  openaiModel: string;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
   indexValidate: boolean;
   indexEnrich: boolean;
   indexCrossref: boolean;
@@ -23,10 +29,16 @@ export interface PluginPreferences {
 }
 
 const defaultPrefs: PluginPreferences = {
+  llmProvider: "gemini",
   geminiApiKey: "",
   autoValidate: true,
   showPreview: true,
   defaultModel: "gemini-2.0-flash",
+  openaiBaseUrl: "https://api.openai.com/v1",
+  openaiApiKey: "",
+  openaiModel: "gpt-4o-mini",
+  ollamaBaseUrl: "http://localhost:11434",
+  ollamaModel: "llama3.2",
   indexValidate: true,
   indexEnrich: true,
   indexCrossref: true,
@@ -67,24 +79,41 @@ export class PreferencesManager {
   }
 
   static getApiKey(): string {
+    const provider = this.get("llmProvider");
+    if (provider === "openai_compatible") return this.get("openaiApiKey");
+    if (provider === "ollama") return "";
     return this.get("geminiApiKey");
   }
 
   static setApiKey(apiKey: string): void {
+    const provider = this.get("llmProvider");
+    if (provider === "openai_compatible") {
+      this.set("openaiApiKey", apiKey);
+      return;
+    }
+    if (provider === "ollama") return;
     this.set("geminiApiKey", apiKey);
   }
 
   static hasApiKey(): boolean {
+    const provider = this.get("llmProvider");
+    if (provider === "ollama") return true;
     const key = this.getApiKey();
     return key !== undefined && key !== null && key.trim().length > 0;
   }
 
   static getAll(): PluginPreferences {
     return {
+      llmProvider: this.get("llmProvider"),
       geminiApiKey: this.get("geminiApiKey"),
       autoValidate: this.get("autoValidate"),
       showPreview: this.get("showPreview"),
       defaultModel: this.get("defaultModel"),
+      openaiBaseUrl: this.get("openaiBaseUrl"),
+      openaiApiKey: this.get("openaiApiKey"),
+      openaiModel: this.get("openaiModel"),
+      ollamaBaseUrl: this.get("ollamaBaseUrl"),
+      ollamaModel: this.get("ollamaModel"),
       indexValidate: this.get("indexValidate"),
       indexEnrich: this.get("indexEnrich"),
       indexCrossref: this.get("indexCrossref"),
