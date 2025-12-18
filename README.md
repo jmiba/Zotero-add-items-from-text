@@ -1,6 +1,7 @@
 # Zotero Add Items from Text
 
-[![DOI](https://zenodo.org/badge/1117708523.svg)](https://doi.org/10.5281/zenodo.17956351)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.1117708523-blue)](https://doi.org/10.5281/zenodo.17956351)
+
 
 A Zotero 7 plugin that extracts and imports literature references from unstructured text using a configurable AI provider (Gemini, OpenAI-compatible, or Ollama). 
 
