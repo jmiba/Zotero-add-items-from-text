@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Add Items from Text",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Extract and import literature references from unstructured text using a configurable AI provider",
   "author": "Jens Mittelbach",
   "homepage_url": "https://github.com/jmiba/Zotero-add-items-from-text",

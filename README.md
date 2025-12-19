@@ -13,6 +13,7 @@ A Zotero 7 plugin that extracts and imports literature references from unstructu
 - **Validation (AI)**: Optional automated validation of extracted bibliographic data
 - **Validation (Indexes)**: Optional checks against Crossref, OpenAlex, lobid (hbz catalog), Library of Congress, GBV/K10Plus (SRU), and Wikidata
 - **Enrichment**: High-confidence index matches can fill/overwrite missing bibliographic fields (including author lists)
+- **Source Priorities**: Prefer library catalogs over Crossref/OpenAlex when multiple sources validate a match
 - **Preview Before Import**: Review and select which references to import
 - **BibTeX Support**: View extracted references in BibTeX format
 - **Collection-Aware**: Imports directly to your selected collection
@@ -74,7 +75,7 @@ Items added to the Zotero library:
 2. Navigate to the "Add Items from Text" tab
 3. Choose an AI provider (Gemini / OpenAI-compatible / Ollama)
 4. Configure the provider (API key / base URL / model, depending on provider)
-5. (Optional) Enable bibliographic index validation/enrichment and configure `mailto` values for polite API usage
+5. (Optional) Enable bibliographic index validation/enrichment, configure `mailto` values for polite API usage, and adjust source priorities if desired
 
 ## Usage
 
@@ -99,7 +100,7 @@ Items added to the Zotero library:
 ## Notes
 
 - **DOIs on books**: Zotero doesn’t allow a DOI field for all item types. If setting `DOI` fails, the add-on stores it as `DOI:<doi>` in the item’s `Extra` field.
-- **Index enrichment policy**: When an index match is very high confidence (e.g. DOI match), the add-on may overwrite core bibliographic fields to align with the authoritative record.
+- **Index enrichment policy**: When an index match is very high confidence (e.g. DOI match), the add-on may overwrite core bibliographic fields to align with the authoritative record. If multiple sources validate a match, the configured source priorities decide which one “wins”.
 - **Library of Congress lookup coverage**: The `loc.gov` JSON API primarily indexes digitized/online content and may miss many print-only books (including modern academic titles). Comprehensive LoC catalog access would require their Z39.50/SRU interfaces (not implemented).
 
 ## Development

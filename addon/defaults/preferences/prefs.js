@@ -20,6 +20,13 @@ pref("extensions.zotero.additemsfromtext.indexLoc", true);
 pref("extensions.zotero.additemsfromtext.indexGbv", true);
 pref("extensions.zotero.additemsfromtext.gbvSruUrl", "https://sru.k10plus.de/gvk");
 pref("extensions.zotero.additemsfromtext.indexWikidata", true);
+// When multiple sources validate a match, lower numbers are preferred.
+pref("extensions.zotero.additemsfromtext.indexPriorityGbv", 1);
+pref("extensions.zotero.additemsfromtext.indexPriorityLobid", 2);
+pref("extensions.zotero.additemsfromtext.indexPriorityLoc", 3);
+pref("extensions.zotero.additemsfromtext.indexPriorityCrossref", 4);
+pref("extensions.zotero.additemsfromtext.indexPriorityOpenAlex", 5);
+pref("extensions.zotero.additemsfromtext.indexPriorityWikidata", 6);
 // Hidden model caches for provider settings UI (stored as JSON strings)
 pref("extensions.zotero.additemsfromtext._modelCacheGemini", "{\"updatedAt\":0,\"models\":[]}");
 pref("extensions.zotero.additemsfromtext._modelCacheOpenAICompatible", "{}");

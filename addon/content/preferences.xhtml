@@ -215,6 +215,63 @@
               label="Wikidata"
               preference="extensions.zotero.additemsfromtext.indexWikidata"
               style="margin-top: 8px;"/>
+
+    <separator class="thin" style="margin: 12px 0 8px 0;"/>
+
+    <label><html:h3>Source Priority</html:h3></label>
+    <description style="margin-top: 4px; font-size: 11px; color: #666;">
+      When multiple sources validate a match, lower numbers are preferred (1 = highest priority).
+    </description>
+
+    <hbox style="margin-top: 8px; margin-left: 22px;">
+      <vbox flex="1">
+        <hbox align="center" style="margin-top: 6px;">
+          <label value="GBV/K10Plus (SRU):" style="width: 170px;"/>
+          <html:input id="add-items-from-text-priority-gbv"
+                      preference="extensions.zotero.additemsfromtext.indexPriorityGbv"
+                      type="number" min="1" max="99" step="1"
+                      style="width: 70px;"/>
+        </hbox>
+        <hbox align="center" style="margin-top: 6px;">
+          <label value="lobid (hbz catalog):" style="width: 170px;"/>
+          <html:input id="add-items-from-text-priority-lobid"
+                      preference="extensions.zotero.additemsfromtext.indexPriorityLobid"
+                      type="number" min="1" max="99" step="1"
+                      style="width: 70px;"/>
+        </hbox>
+        <hbox align="center" style="margin-top: 6px;">
+          <label value="Library of Congress:" style="width: 170px;"/>
+          <html:input id="add-items-from-text-priority-loc"
+                      preference="extensions.zotero.additemsfromtext.indexPriorityLoc"
+                      type="number" min="1" max="99" step="1"
+                      style="width: 70px;"/>
+        </hbox>
+      </vbox>
+
+      <vbox flex="1" style="margin-left: 24px;">
+        <hbox align="center" style="margin-top: 6px;">
+          <label value="Crossref:" style="width: 170px;"/>
+          <html:input id="add-items-from-text-priority-crossref"
+                      preference="extensions.zotero.additemsfromtext.indexPriorityCrossref"
+                      type="number" min="1" max="99" step="1"
+                      style="width: 70px;"/>
+        </hbox>
+        <hbox align="center" style="margin-top: 6px;">
+          <label value="OpenAlex:" style="width: 170px;"/>
+          <html:input id="add-items-from-text-priority-openalex"
+                      preference="extensions.zotero.additemsfromtext.indexPriorityOpenAlex"
+                      type="number" min="1" max="99" step="1"
+                      style="width: 70px;"/>
+        </hbox>
+        <hbox align="center" style="margin-top: 6px;">
+          <label value="Wikidata:" style="width: 170px;"/>
+          <html:input id="add-items-from-text-priority-wikidata"
+                      preference="extensions.zotero.additemsfromtext.indexPriorityWikidata"
+                      type="number" min="1" max="99" step="1"
+                      style="width: 70px;"/>
+        </hbox>
+      </vbox>
+    </hbox>
   </groupbox>
   
   <groupbox>
@@ -224,7 +281,7 @@
       from unstructured text and import them into your Zotero library.
     </description>
     <description style="margin-top: 5px; font-size: 11px; color: #666;">
-      Version 1.0.5
+      Version 1.0.6
     </description>
   </groupbox>
 

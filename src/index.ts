@@ -276,6 +276,11 @@ class AddItemsFromTextPlugin {
       if (PreferencesManager.get("indexValidate")) {
         progress.update(`Checking ${references.length} reference(s) in bibliographic indexes...`, 65);
 
+        const toPositiveInt = (value: unknown, fallback: number): number => {
+          const n = typeof value === "number" ? value : parseInt(String(value), 10);
+          return Number.isFinite(n) && n > 0 ? n : fallback;
+        };
+
         const { references: enriched, validationResults: indexResults } =
           await IndexValidationService.validateAndEnrich(
             references,
@@ -291,6 +296,14 @@ class AddItemsFromTextPlugin {
               gbv: PreferencesManager.get("indexGbv"),
               gbvSruUrl: PreferencesManager.get("gbvSruUrl"),
               wikidata: PreferencesManager.get("indexWikidata"),
+              sourcePriorities: {
+                gbv: toPositiveInt(PreferencesManager.get("indexPriorityGbv"), 1),
+                lobid: toPositiveInt(PreferencesManager.get("indexPriorityLobid"), 2),
+                loc: toPositiveInt(PreferencesManager.get("indexPriorityLoc"), 3),
+                crossref: toPositiveInt(PreferencesManager.get("indexPriorityCrossref"), 4),
+                openalex: toPositiveInt(PreferencesManager.get("indexPriorityOpenAlex"), 5),
+                wikidata: toPositiveInt(PreferencesManager.get("indexPriorityWikidata"), 6),
+              },
             },
             (current, total, title) => {
               const pct = 65 + Math.round((current / Math.max(total, 1)) * 25);

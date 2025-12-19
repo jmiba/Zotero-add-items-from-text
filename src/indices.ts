@@ -15,6 +15,11 @@ export interface IndexPreferences {
   gbv: boolean;
   gbvSruUrl?: string;
   wikidata: boolean;
+  /**
+   * Lower numbers are preferred when choosing between multiple validated sources.
+   * Values <= 0 or non-numeric fall back to defaults.
+   */
+  sourcePriorities?: Partial<Record<IndexSource, number>>;
 }
 
 interface IndexMatch {
@@ -24,6 +29,27 @@ interface IndexMatch {
   explanation: string;
   url?: string;
   patch?: Partial<ExtractedReference>;
+}
+
+const DEFAULT_SOURCE_PRIORITIES: Record<IndexSource, number> = {
+  gbv: 1,
+  lobid: 2,
+  loc: 3,
+  crossref: 4,
+  openalex: 5,
+  wikidata: 6,
+};
+
+function getSourcePriority(prefs: IndexPreferences, source: IndexSource): number {
+  const raw = prefs.sourcePriorities?.[source];
+  const parsed =
+    typeof raw === "number"
+      ? raw
+      : raw !== undefined && raw !== null
+        ? parseInt(String(raw), 10)
+        : NaN;
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return DEFAULT_SOURCE_PRIORITIES[source] ?? 100;
 }
 
 function normalizeText(value: string): string {
@@ -1093,6 +1119,9 @@ export class IndexValidationService {
           const ra = rank(a);
           const rb = rank(b);
           if (ra !== rb) return ra - rb;
+          const pa = getSourcePriority(prefs, a.source);
+          const pb = getSourcePriority(prefs, b.source);
+          if (pa !== pb) return pa - pb;
           return b.score - a.score;
         })[0];
 
@@ -1115,7 +1144,12 @@ export class IndexValidationService {
         const validatedWithPatch = matches
           .filter((m): m is IndexMatch & { patch: Partial<ExtractedReference> } => m.status === "validated" && !!m.patch)
           .slice()
-          .sort((a, b) => b.score - a.score);
+          .sort((a, b) => {
+            const pa = getSourcePriority(prefs, a.source);
+            const pb = getSourcePriority(prefs, b.source);
+            if (pa !== pb) return pa - pb;
+            return b.score - a.score;
+          });
 
         for (const m of validatedWithPatch) {
           if (m === best) continue;

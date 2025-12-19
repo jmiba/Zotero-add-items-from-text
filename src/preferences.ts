@@ -26,6 +26,12 @@ export interface PluginPreferences {
   indexGbv: boolean;
   gbvSruUrl: string;
   indexWikidata: boolean;
+  indexPriorityGbv: number;
+  indexPriorityLobid: number;
+  indexPriorityLoc: number;
+  indexPriorityCrossref: number;
+  indexPriorityOpenAlex: number;
+  indexPriorityWikidata: number;
 }
 
 const defaultPrefs: PluginPreferences = {
@@ -50,6 +56,13 @@ const defaultPrefs: PluginPreferences = {
   indexGbv: true,
   gbvSruUrl: "https://sru.k10plus.de/gvk",
   indexWikidata: true,
+  // Lower numbers are preferred when two sources both validate.
+  indexPriorityGbv: 1,
+  indexPriorityLobid: 2,
+  indexPriorityLoc: 3,
+  indexPriorityCrossref: 4,
+  indexPriorityOpenAlex: 5,
+  indexPriorityWikidata: 6,
 };
 
 export class PreferencesManager {
@@ -125,6 +138,12 @@ export class PreferencesManager {
       indexGbv: this.get("indexGbv"),
       gbvSruUrl: this.get("gbvSruUrl"),
       indexWikidata: this.get("indexWikidata"),
+      indexPriorityGbv: this.get("indexPriorityGbv"),
+      indexPriorityLobid: this.get("indexPriorityLobid"),
+      indexPriorityLoc: this.get("indexPriorityLoc"),
+      indexPriorityCrossref: this.get("indexPriorityCrossref"),
+      indexPriorityOpenAlex: this.get("indexPriorityOpenAlex"),
+      indexPriorityWikidata: this.get("indexPriorityWikidata"),
     };
   }
 
