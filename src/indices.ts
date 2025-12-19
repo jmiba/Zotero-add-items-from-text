@@ -1,4 +1,4 @@
-import { ExtractedReference, ValidationResult } from "./gemini";
+import { ExtractedReference, ValidationResult } from "./llm";
 
 export type IndexSource = "crossref" | "openalex" | "lobid" | "loc" | "gbv" | "wikidata";
 export type IndexStatus = "validated" | "invalid" | "not_found" | "error";

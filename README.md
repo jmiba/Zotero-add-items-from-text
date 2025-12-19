@@ -135,7 +135,12 @@ npm run watch
 │   ├── index.ts           # Main plugin class
 │   ├── config.ts          # Configuration
 │   ├── preferences.ts     # Preferences management
-│   ├── gemini.ts          # LLM integration (Gemini/OpenAI-compatible/Ollama)
+│   ├── llm/               # LLM integration (Gemini/OpenAI-compatible/Ollama)
+│   │   ├── index.ts       # LLM service + shared types
+│   │   ├── service.ts     # Provider selection and orchestration
+│   │   ├── prompts.ts     # Extraction/validation prompts
+│   │   ├── utils.ts       # JSON parsing and HTTP helpers
+│   │   └── providers/     # Provider-specific implementations
 │   ├── indices.ts         # Index validation & enrichment (Crossref/OpenAlex/lobid/LoC/GBV/Wikidata)
 │   ├── bibtex.ts          # BibTeX utilities
 │   ├── import.ts          # Zotero import service

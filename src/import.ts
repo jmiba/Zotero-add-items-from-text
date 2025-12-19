@@ -2,7 +2,7 @@
  * Zotero item import service - converts extracted references to Zotero items
  */
 
-import { ExtractedReference } from "./gemini";
+import { ExtractedReference } from "./llm";
 
 function cleanDOI(raw: string): string {
   const trimmed = raw.trim();

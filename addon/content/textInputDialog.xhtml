@@ -30,11 +30,6 @@ var TextInputDialog = {
     if (this.io.dataIn && typeof this.io.dataIn.initialText === "string") {
       document.getElementById('text-input').value = this.io.dataIn.initialText;
     }
-    
-    // Focus the text area
-    setTimeout(() => {
-      document.getElementById('text-input').focus();
-    }, 100);
   },
   
   onAccept: function() {
@@ -68,9 +63,9 @@ Smith, J. (2023). Machine Learning in Libraries. Journal of Information Science,
 
 Johnson, M. &amp; Williams, K. (2022). Digital Humanities and Library Science. Academic Press."></html:textarea>
   
-  <hbox style="margin-top: 15px; justify-content: flex-end; gap: 10px;">
-    <button id="cancel-button" label="Cancel" oncommand="TextInputDialog.onCancel();"/>
-    <button id="ok-button" label="Extract References" default="true" oncommand="TextInputDialog.onAccept();"/>
+  <hbox style="margin-top: 12px; justify-content: flex-end; gap: 10px;">
+    <button id="cancel-button" label="Cancel" onmousedown="document.getElementById('text-input').blur();" oncommand="TextInputDialog.onCancel();"/>
+    <button id="accept-button" label="Extract References" default="true" onmousedown="document.getElementById('text-input').blur();" oncommand="TextInputDialog.onAccept();"/>
   </hbox>
 </vbox>
 

@@ -4,11 +4,11 @@
 
 import { config } from "./config";
 import { PreferencesManager } from "./preferences";
-import { LLMService } from "./gemini";
+import { LLMService } from "./llm";
 import { ZoteroImportService } from "./import";
 import { UIService } from "./ui";
 import { IndexValidationService } from "./indices";
-import type { ValidationResult } from "./gemini";
+import type { ValidationResult } from "./llm";
 
 function formatErrorMessage(error: unknown): string {
   if (error === null || error === undefined) return "An unknown error occurred";

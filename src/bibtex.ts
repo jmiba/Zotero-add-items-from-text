@@ -2,7 +2,7 @@
  * BibTeX generation and parsing utilities
  */
 
-import { ExtractedReference } from "./gemini";
+import { ExtractedReference } from "./llm";
 
 const ITEM_TYPE_BIBTEX_MAP: Record<string, string> = {
   journalArticle: "article",
