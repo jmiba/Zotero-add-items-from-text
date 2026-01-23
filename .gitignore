@@ -1,8 +1,13 @@
 node_modules/
 build/
 *.xpi
-.DS_Store
 *.log
 .env
 .vscode/
 dist/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*

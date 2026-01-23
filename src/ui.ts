@@ -71,22 +71,55 @@ export class UIService {
       
       // Try to open dialog - use a data URI as fallback
       try {
-        this.window.openDialog(
+        const dialogWindow = this.window.openDialog(
           dialogUrl,
           "add-items-text-input",
           "chrome,dialog,modal,centerscreen,resizable=yes,width=700,height=550",
           io
         );
 
-        // Dialog is modal, so execution resumes here after it closes
-        const rawText = io.dataOut?.confirmed ? io.dataOut.text : null;
-        if (typeof rawText === "string") {
-          this.lastInputText = rawText;
-          const trimmed = rawText.trim();
-          resolve(trimmed ? trimmed : null);
-        } else {
-          resolve(null);
+        const finish = () => {
+          if (!io.dataOut) {
+            io.dataOut = { text: null, confirmed: false };
+          }
+          const rawText = io.dataOut.confirmed ? io.dataOut.text : null;
+          if (typeof rawText === "string") {
+            this.lastInputText = rawText;
+            const trimmed = rawText.trim();
+            resolve(trimmed ? trimmed : null);
+          } else {
+            resolve(null);
+          }
+        };
+
+        // If the window is truly modal, execution will resume after it closes.
+        // If it isn't (platform quirks), poll until we get dataOut or the window closes.
+        if (dialogWindow && !dialogWindow.closed && !io.dataOut) {
+          const interval = this.window.setInterval(() => {
+            if (io.dataOut || dialogWindow.closed) {
+              this.window.clearInterval(interval);
+              try {
+                if (dialogWindow && !dialogWindow.closed) dialogWindow.close();
+              } catch {
+                // ignore
+              }
+              // Extra safety: close by enumerating windows (some platforms ignore close() on modal sheets)
+              this.closeTextInputDialogs();
+              finish();
+            }
+          }, 100);
+          return;
         }
+
+        // Best-effort: ensure the dialog isn't left open
+        try {
+          if (dialogWindow && !dialogWindow.closed) dialogWindow.close();
+        } catch {
+          // ignore
+        }
+        this.closeTextInputDialogs();
+
+        finish();
       } catch (e) {
         Zotero.debug("Add Items from Text: Dialog error, using fallback prompt: " + e);
         // Fallback to simple prompt
@@ -298,7 +331,7 @@ export class UIService {
     Zotero.debug(`${config.addonName}: Found ${allToolbars.length} toolbar elements`);
     allToolbars.forEach(t => Zotero.debug(`  - ${t.tagName}#${t.id}`));
 
-    // Zotero 7 specific toolbar IDs
+    // Zotero 7/8 toolbar IDs
     const toolbarIds = [
       "zotero-items-toolbar",
       "zotero-editpane-item-box",
@@ -413,7 +446,7 @@ export class UIService {
     Zotero.debug(`${config.addonName}: Found ${allMenus.length} menu elements`);
     allMenus.forEach(m => Zotero.debug(`  - ${m.tagName}#${m.id}`));
     
-    // Try multiple possible menu IDs for Zotero 7
+    // Try multiple possible menu IDs for Zotero 7/8
     const menuIds = [
       "menu_ToolsPopup",
       "menu_Tools_Popup", 

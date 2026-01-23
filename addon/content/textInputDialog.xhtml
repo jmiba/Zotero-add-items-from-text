@@ -9,12 +9,14 @@
         width="700"
         height="550"
         persist="screenX screenY width height"
-        onload="TextInputDialog.onLoad();">
+        onload="TextInputDialog.onLoad();"
+        onclose="return TextInputDialog.onClose();">
 
 <script type="application/javascript"><![CDATA[
 var TextInputDialog = {
+  handled: false,
   onLoad: function() {
-    this.io = window.arguments[0];
+    this.io = (window.arguments && window.arguments.length) ? window.arguments[0] : { dataIn: {} };
     
     // Set description if provided
     if (this.io.dataIn && this.io.dataIn.description) {
@@ -32,19 +34,31 @@ var TextInputDialog = {
     }
   },
   
-  onAccept: function() {
-    var text = document.getElementById('text-input').value;
-    if (this.io) {
+  setResult: function(confirmed) {
+    if (this.handled) return;
+    this.handled = true;
+    if (!this.io) return;
+    if (confirmed) {
+      var text = document.getElementById('text-input').value;
       this.io.dataOut = { text: text, confirmed: true };
-    }
-    window.close();
-  },
-  
-  onCancel: function() {
-    if (this.io) {
+    } else {
       this.io.dataOut = { text: null, confirmed: false };
     }
+  },
+
+  onAccept: function() {
+    this.setResult(true);
     window.close();
+  },
+
+  onCancel: function() {
+    this.setResult(false);
+    window.close();
+  },
+
+  onClose: function() {
+    this.setResult(false);
+    return true;
   }
 };
 ]]></script>
@@ -64,8 +78,8 @@ Smith, J. (2023). Machine Learning in Libraries. Journal of Information Science,
 Johnson, M. &amp; Williams, K. (2022). Digital Humanities and Library Science. Academic Press."></html:textarea>
   
   <hbox style="margin-top: 12px; justify-content: flex-end; gap: 10px;">
-    <button id="cancel-button" label="Cancel" onmousedown="document.getElementById('text-input').blur();" oncommand="TextInputDialog.onCancel();"/>
-    <button id="accept-button" label="Extract References" default="true" onmousedown="document.getElementById('text-input').blur();" oncommand="TextInputDialog.onAccept();"/>
+    <button id="cancel-button" label="Cancel" onclick="TextInputDialog.onCancel();" oncommand="TextInputDialog.onCancel();"/>
+    <button id="accept-button" label="Extract References" default="true" onclick="TextInputDialog.onAccept();" oncommand="TextInputDialog.onAccept();"/>
   </hbox>
 </vbox>
 
