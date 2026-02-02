@@ -111,13 +111,40 @@ var PreviewDialog = {
 
       const enrichment = this.enrichment ? this.enrichment[index] : null;
       if (enrichment && enrichment.fields && enrichment.fields.length) {
-        const enrich = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
-        enrich.textContent = "Enriched: " + enrichment.fields.join(", ");
-        enrich.style.cssText = "font-size:11px; margin-top:6px; color:#2a7; word-break:break-word;";
+        const enrichRow = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+        enrichRow.style.cssText = "font-size:11px; margin-top:6px; color:#2a7; word-break:break-word; display:flex; gap:8px; align-items:center; flex-wrap:wrap;";
+
+        const enrichText = document.createElementNS("http://www.w3.org/1999/xhtml", "span");
+        enrichText.textContent = "Enriched: " + enrichment.fields.join(", ");
         if (enrichment.details) {
-          enrich.setAttribute("title", enrichment.details);
+          enrichText.setAttribute("title", enrichment.details);
         }
-        details.appendChild(enrich);
+        enrichRow.appendChild(enrichText);
+
+        let detailsBox = null;
+        if (enrichment.details) {
+          const detailsLink = document.createElementNS("http://www.w3.org/1999/xhtml", "span");
+          detailsLink.textContent = "Details";
+          detailsLink.style.cssText = "color:#06c; text-decoration:underline; cursor:pointer;";
+
+          detailsBox = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+          detailsBox.textContent = enrichment.details;
+          detailsBox.style.cssText = "display:none; margin-top:4px; font-size:11px; color:#555; white-space:pre-wrap; word-break:break-word;";
+
+          detailsLink.addEventListener("click", () => {
+            if (!detailsBox) return;
+            const isHidden = detailsBox.style.display === "none";
+            detailsBox.style.display = isHidden ? "block" : "none";
+            detailsLink.textContent = isHidden ? "Hide" : "Details";
+          });
+
+          enrichRow.appendChild(detailsLink);
+        }
+
+        details.appendChild(enrichRow);
+        if (detailsBox) {
+          details.appendChild(detailsBox);
+        }
       }
 
       const badge = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
