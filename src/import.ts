@@ -33,7 +33,7 @@ function normalizeItemType(raw: string): string {
 function resolveItemType(raw: string): string {
   const normalized = normalizeItemType(raw);
   try {
-    const id = Zotero?.ItemTypes?.getID?.(normalized as Zotero.ItemType);
+    const id = Zotero?.ItemTypes?.getID?.(normalized as string);
     if (id) return normalized;
   } catch {
     // ignore
@@ -83,7 +83,7 @@ export class ZoteroImportService {
     else if (ref.year) item.setField("date", ref.year);
 
     // Set publication info based on item type
-    switch (ref.itemType) {
+    switch (itemType) {
       case "journalArticle":
         if (ref.publicationTitle) item.setField("publicationTitle", ref.publicationTitle);
         if (ref.journalAbbreviation) item.setField("journalAbbreviation", ref.journalAbbreviation);
