@@ -226,7 +226,8 @@ export class UIService {
    */
   async showPreviewDialog(
     references: ExtractedReference[],
-    validationResults?: ValidationResult[]
+    validationResults?: ValidationResult[],
+    enrichmentInfo?: Array<{ fields: string[]; details: string } | null>
   ): Promise<{ confirmed: boolean; selectedIndices: number[] }> {
     return new Promise((resolve) => {
       const io = {
@@ -234,6 +235,7 @@ export class UIService {
           title: `Preview: ${references.length} Reference(s)`,
           references,
           validationResults,
+          enrichment: enrichmentInfo,
           bibtex: BibtexService.referencesToBibtex(references),
         },
         dataOut: null as { confirmed: boolean; selectedIndices: number[] } | null,

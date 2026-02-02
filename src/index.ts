@@ -8,7 +8,97 @@ import { LLMService } from "./llm";
 import { ZoteroImportService } from "./import";
 import { UIService } from "./ui";
 import { IndexValidationService } from "./indices";
-import type { ValidationResult } from "./llm";
+import type { ExtractedReference, ValidationResult } from "./llm";
+
+type EnrichmentInfo = { fields: string[]; details: string };
+
+function isBlankValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed === "" || trimmed.toLowerCase() === "null";
+  }
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function formatAuthors(authors?: Array<{ firstName: string; lastName: string }>): string {
+  if (!authors || !authors.length) return "";
+  return authors
+    .map((a) => `${(a && a.lastName) || ""}, ${(a && a.firstName) || ""}`.replace(/^[, ]+|[, ]+$/g, ""))
+    .filter(Boolean)
+    .join("; ");
+}
+
+function normalizeFieldValue(field: string, value: unknown): string {
+  if (field === "authors") {
+    return formatAuthors(value as Array<{ firstName: string; lastName: string }>);
+  }
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) return value.map((v) => String(v)).join("; ");
+  return String(value);
+}
+
+function computeEnrichmentDiffs(
+  before: ExtractedReference[],
+  after: ExtractedReference[]
+): Array<EnrichmentInfo | null> {
+  const fields = [
+    "title",
+    "authors",
+    "date",
+    "year",
+    "publicationTitle",
+    "journalAbbreviation",
+    "volume",
+    "issue",
+    "pages",
+    "DOI",
+    "ISBN",
+    "ISSN",
+    "url",
+    "publisher",
+    "place",
+    "edition",
+    "abstractNote",
+    "language",
+    "bookTitle",
+    "conferenceName",
+    "proceedingsTitle",
+    "university",
+    "thesisType",
+    "series",
+    "seriesNumber",
+    "numberOfVolumes",
+    "numPages",
+  ] as const;
+
+  const results: Array<EnrichmentInfo | null> = [];
+  const total = Math.max(before.length, after.length);
+
+  for (let i = 0; i < total; i++) {
+    const b = before[i] || ({} as ExtractedReference);
+    const a = after[i] || ({} as ExtractedReference);
+    const changedFields: string[] = [];
+    const details: string[] = [];
+
+    for (const key of fields) {
+      const beforeVal = normalizeFieldValue(key, (b as unknown as Record<string, unknown>)[key]);
+      const afterVal = normalizeFieldValue(key, (a as unknown as Record<string, unknown>)[key]);
+      if (isBlankValue(beforeVal) && isBlankValue(afterVal)) continue;
+      if (beforeVal === afterVal) continue;
+      changedFields.push(key);
+      const left = beforeVal || "—";
+      const right = afterVal || "—";
+      details.push(`${key}: ${left} → ${right}`);
+    }
+
+    results.push(changedFields.length ? { fields: changedFields, details: details.join("\n") } : null);
+  }
+
+  return results;
+}
 
 function formatErrorMessage(error: unknown): string {
   if (error === null || error === undefined) return "An unknown error occurred";
@@ -261,6 +351,7 @@ class AddItemsFromTextPlugin {
       }
 
       let references = response.references;
+      let enrichmentInfo: Array<EnrichmentInfo | null> | undefined;
 
       // Validate references if enabled
       let validationResults: ValidationResult[] | undefined = undefined;
@@ -280,6 +371,11 @@ class AddItemsFromTextPlugin {
           const n = typeof value === "number" ? value : parseInt(String(value), 10);
           return Number.isFinite(n) && n > 0 ? n : fallback;
         };
+
+        const originalReferences = references.map((ref) => ({
+          ...(ref as ExtractedReference),
+          authors: ref.authors ? ref.authors.map((a) => ({ ...a })) : undefined,
+        }));
 
         const { references: enriched, validationResults: indexResults } =
           await IndexValidationService.validateAndEnrich(
@@ -311,6 +407,7 @@ class AddItemsFromTextPlugin {
             }
           );
 
+        enrichmentInfo = computeEnrichmentDiffs(originalReferences, enriched);
         references = enriched;
         validationResults = mergeValidationArrays(validationResults, indexResults);
       }
@@ -319,7 +416,7 @@ class AddItemsFromTextPlugin {
 
       // Show preview dialog (optional)
       const previewResult = PreferencesManager.get("showPreview")
-        ? await ui.showPreviewDialog(references, validationResults)
+        ? await ui.showPreviewDialog(references, validationResults, enrichmentInfo)
         : {
             confirmed: true,
             selectedIndices: references.map((_, i) => i),

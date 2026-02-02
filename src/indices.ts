@@ -31,6 +31,8 @@ interface IndexMatch {
   patch?: Partial<ExtractedReference>;
 }
 
+const MAX_CONCURRENT_INDEX_REQUESTS = 3;
+
 const DEFAULT_SOURCE_PRIORITIES: Record<IndexSource, number> = {
   gbv: 1,
   lobid: 2,
@@ -258,6 +260,38 @@ function scoreCandidate(
 
   const score = 0.75 * titleScore + 0.2 * authorScore + 0.05 * yearScore;
   return { score, doiMismatch: false };
+}
+
+async function runIndexTasks(
+  tasks: Array<{ source: IndexSource; run: () => Promise<IndexMatch> }>,
+  concurrency: number
+): Promise<IndexMatch[]> {
+  if (!tasks.length) return [];
+  const limit = Math.max(1, Math.min(concurrency, tasks.length));
+  const results: IndexMatch[] = new Array(tasks.length);
+  let next = 0;
+
+  const worker = async () => {
+    while (true) {
+      const current = next++;
+      if (current >= tasks.length) break;
+      const task = tasks[current];
+      try {
+        results[current] = await task.run();
+      } catch (e) {
+        results[current] = {
+          source: task.source,
+          status: "error",
+          score: 0,
+          explanation: `error: ${String(e)}`,
+        };
+      }
+    }
+  };
+
+  const workers = Array.from({ length: limit }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<IndexMatch> {
@@ -1103,13 +1137,15 @@ export class IndexValidationService {
       const ref = refs[i];
       onProgress?.(i + 1, total, ref.title || `Reference ${i + 1}`);
 
-      const matches: IndexMatch[] = [];
-      if (prefs.crossref) matches.push(await matchCrossref(ref, prefs.crossrefMailto));
-      if (prefs.openalex) matches.push(await matchOpenAlex(ref, prefs.openalexMailto));
-      if (prefs.lobid) matches.push(await matchLobid(ref));
-      if (prefs.loc) matches.push(await matchLoC(ref));
-      if (prefs.gbv) matches.push(await matchGbvK10plus(ref, prefs.gbvSruUrl));
-      if (prefs.wikidata) matches.push(await matchWikidata(ref));
+      const tasks: Array<{ source: IndexSource; run: () => Promise<IndexMatch> }> = [];
+      if (prefs.crossref) tasks.push({ source: "crossref", run: () => matchCrossref(ref, prefs.crossrefMailto) });
+      if (prefs.openalex) tasks.push({ source: "openalex", run: () => matchOpenAlex(ref, prefs.openalexMailto) });
+      if (prefs.lobid) tasks.push({ source: "lobid", run: () => matchLobid(ref) });
+      if (prefs.loc) tasks.push({ source: "loc", run: () => matchLoC(ref) });
+      if (prefs.gbv) tasks.push({ source: "gbv", run: () => matchGbvK10plus(ref, prefs.gbvSruUrl) });
+      if (prefs.wikidata) tasks.push({ source: "wikidata", run: () => matchWikidata(ref) });
+
+      const matches: IndexMatch[] = await runIndexTasks(tasks, MAX_CONCURRENT_INDEX_REQUESTS);
 
       const best = matches
         .slice()

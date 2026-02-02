@@ -51,6 +51,39 @@ export function normalizeReference(ref: ExtractedReference): ExtractedReference 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r: any = { ...(ref as any) };
 
+  const normalizeItemType = (raw: unknown): string => {
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (!value) return "document";
+    const key = value.toLowerCase().replace(/\s+/g, "");
+    const map: Record<string, string> = {
+      article: "journalArticle",
+      journalarticle: "journalArticle",
+      journal: "journalArticle",
+      book: "book",
+      booksection: "bookSection",
+      bookchapter: "bookSection",
+      chapter: "bookSection",
+      incollection: "bookSection",
+      conferencepaper: "conferencePaper",
+      inproceedings: "conferencePaper",
+      conference: "conferencePaper",
+      proceedings: "conferencePaper",
+      thesis: "thesis",
+      dissertation: "thesis",
+      webpage: "webpage",
+      website: "webpage",
+      web: "webpage",
+      report: "report",
+      preprint: "preprint",
+      patent: "patent",
+      document: "document",
+      manuscript: "manuscript",
+    };
+    return map[key] || value;
+  };
+
+  r.itemType = normalizeItemType(r.itemType);
+
   const date = typeof r.date === "string" ? r.date.trim() : r.date;
   const year = typeof r.year === "string" ? r.year.trim() : r.year;
 
@@ -63,6 +96,17 @@ export function normalizeReference(ref: ExtractedReference): ExtractedReference 
     if (match) {
       r.year = match[1];
     }
+  }
+
+  // Some models place book publishers in publicationTitle; prefer publisher for non-articles.
+  const pubTitle = typeof r.publicationTitle === "string" ? r.publicationTitle.trim() : r.publicationTitle;
+  const publisher = typeof r.publisher === "string" ? r.publisher.trim() : r.publisher;
+  if (
+    pubTitle &&
+    (!publisher || publisher === "null") &&
+    ["book", "bookSection", "report", "thesis", "document", "manuscript"].includes(String(r.itemType || ""))
+  ) {
+    r.publisher = pubTitle;
   }
 
   return r as ExtractedReference;

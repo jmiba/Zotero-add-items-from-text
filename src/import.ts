@@ -4,6 +4,44 @@
 
 import { ExtractedReference } from "./llm";
 
+function normalizeItemType(raw: string): string {
+  const value = (raw || "").trim();
+  if (!value) return "document";
+  const key = value.toLowerCase().replace(/\s+/g, "");
+  const alias: Record<string, string> = {
+    article: "journalArticle",
+    journalarticle: "journalArticle",
+    journal: "journalArticle",
+    booksection: "bookSection",
+    bookchapter: "bookSection",
+    chapter: "bookSection",
+    incollection: "bookSection",
+    conferencepaper: "conferencePaper",
+    inproceedings: "conferencePaper",
+    conference: "conferencePaper",
+    proceedings: "conferencePaper",
+    dissertation: "thesis",
+    website: "webpage",
+    web: "webpage",
+    preprint: "preprint",
+    patent: "patent",
+    manuscript: "manuscript",
+  };
+  return alias[key] || value;
+}
+
+function resolveItemType(raw: string): string {
+  const normalized = normalizeItemType(raw);
+  try {
+    const id = Zotero?.ItemTypes?.getID?.(normalized as Zotero.ItemType);
+    if (id) return normalized;
+  } catch {
+    // ignore
+  }
+  // Fall back to a safe type if the provided type isn't supported.
+  return "document";
+}
+
 function cleanDOI(raw: string): string {
   const trimmed = raw.trim();
   try {
@@ -36,7 +74,8 @@ export class ZoteroImportService {
     ref: ExtractedReference,
     collectionID?: number
   ): Promise<ZoteroItem> {
-    const item = new Zotero.Item(ref.itemType);
+    const itemType = resolveItemType(ref.itemType);
+    const item = new Zotero.Item(itemType);
 
     // Set basic fields
     if (ref.title) item.setField("title", ref.title);

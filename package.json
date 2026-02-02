@@ -11,15 +11,17 @@
     "bundle": "node scripts/build.mjs",
     "watch": "tsc --watch",
     "lint": "eslint src --ext .ts",
+    "test": "tsx --test tests/**/*.test.ts",
     "start": "npm run build && zotero -purgecaches -P dev"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@typescript-eslint/eslint-plugin": "^8.50.0",
     "@typescript-eslint/parser": "^8.50.0",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.27.2",
     "eslint": "^9.39.2",
     "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

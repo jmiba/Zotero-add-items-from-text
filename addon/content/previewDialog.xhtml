@@ -17,6 +17,7 @@ var PreviewDialog = {
   references: [],
   validationResults: null,
   selectedIndices: null,
+  enrichment: null,
   bibtexVisible: false,
 
   onLoad: function () {
@@ -25,6 +26,7 @@ var PreviewDialog = {
 
     this.references = Array.isArray(dataIn.references) ? dataIn.references : [];
     this.validationResults = Array.isArray(dataIn.validationResults) ? dataIn.validationResults : null;
+    this.enrichment = Array.isArray(dataIn.enrichment) ? dataIn.enrichment : null;
     this.selectedIndices = new Set(this.references.map((_, i) => i));
 
     const count = this.references.length;
@@ -107,6 +109,17 @@ var PreviewDialog = {
         details.appendChild(warn);
       }
 
+      const enrichment = this.enrichment ? this.enrichment[index] : null;
+      if (enrichment && enrichment.fields && enrichment.fields.length) {
+        const enrich = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+        enrich.textContent = "Enriched: " + enrichment.fields.join(", ");
+        enrich.style.cssText = "font-size:11px; margin-top:6px; color:#2a7; word-break:break-word;";
+        if (enrichment.details) {
+          enrich.setAttribute("title", enrichment.details);
+        }
+        details.appendChild(enrich);
+      }
+
       const badge = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       badge.textContent = ref.itemType || "item";
       badge.style.cssText = "flex:0 0 auto; font-size:11px; padding:2px 8px; background:#555; color:#fff; border-radius:999px; margin-top:2px; white-space:nowrap;";
@@ -168,4 +181,3 @@ var PreviewDialog = {
 </vbox>
 
 </window>
-

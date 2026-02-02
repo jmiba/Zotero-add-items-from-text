@@ -127,7 +127,7 @@ export class LLMService {
   }
 
   private static coerceValidationResults(parsed: unknown): ValidationResult[] | null {
-    const normalize = (value: unknown): ValidationResult => {
+    const normalize = (value: unknown): ValidationResult & { _index?: number } => {
       if (!value || typeof value !== "object") {
         return { isValid: true, errors: [], warnings: ["Invalid validation result format"], suggestions: [] };
       }
@@ -136,7 +136,16 @@ export class LLMService {
       const asStringArray = (v: unknown): string[] =>
         Array.isArray(v) ? v.map((x) => String(x)).filter((s) => s.trim()) : [];
 
+      const idxRaw = record._index ?? record.index;
+      const idx =
+        typeof idxRaw === "number"
+          ? idxRaw
+          : typeof idxRaw === "string" && idxRaw.trim()
+            ? parseInt(idxRaw, 10)
+            : undefined;
+
       return {
+        _index: Number.isFinite(idx as number) ? (idx as number) : undefined,
         isValid,
         errors: asStringArray(record.errors),
         warnings: asStringArray(record.warnings),
@@ -164,16 +173,57 @@ export class LLMService {
     return null;
   }
 
+  static alignValidationResults(
+    refs: ExtractedReference[],
+    results: Array<ValidationResult & { _index?: number }>
+  ): ValidationResult[] {
+    const total = refs.length;
+    const aligned: ValidationResult[] = [];
+
+    const byIndex = new Map<number, ValidationResult>();
+    let hasIndex = false;
+    for (const result of results) {
+      const idx = result._index;
+      if (typeof idx === "number" && Number.isFinite(idx)) {
+        hasIndex = true;
+        byIndex.set(idx, {
+          isValid: result.isValid,
+          errors: result.errors || [],
+          warnings: result.warnings || [],
+          suggestions: result.suggestions || [],
+        });
+      }
+    }
+
+    if (hasIndex) {
+      for (let i = 0; i < total; i++) {
+        aligned.push(
+          byIndex.get(i) || { isValid: true, errors: [], warnings: [], suggestions: [] }
+        );
+      }
+      return aligned;
+    }
+
+    for (let i = 0; i < total; i++) {
+      const result = results[i];
+      aligned.push(
+        result || { isValid: true, errors: [], warnings: [], suggestions: [] }
+      );
+    }
+    return aligned;
+  }
+
   async validateReferences(
     references: ExtractedReference[]
   ): Promise<ValidationResult[]> {
-    const prompt = VALIDATION_PROMPT + JSON.stringify(references, null, 2);
+    const indexed = references.map((ref, index) => ({ ...(ref as ExtractedReference), _index: index }));
+    const prompt = VALIDATION_PROMPT + JSON.stringify(indexed, null, 2);
     const responseText = await this.makeRequest(prompt);
 
     try {
       const parsed = parseJsonLenient(responseText);
       const results = LLMService.coerceValidationResults(parsed);
-      if (results) return results;
+      if (results) return LLMService.alignValidationResults(references, results);
       throw new Error("Unexpected validation response shape");
     } catch (error) {
       Zotero.logError(error as Error);

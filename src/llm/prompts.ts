@@ -1,12 +1,12 @@
 export const EXTRACTION_PROMPT = `You are a bibliographic reference extraction expert. Analyze the following text and extract ALL literature references found within it.
 
 For each reference, provide a structured JSON object with the following fields (use null for missing data):
-- itemType: One of "journalArticle", "book", "bookSection", "conferencePaper", "thesis", "webpage", "report", "patent", "preprint"
+- itemType: One of "journalArticle", "book", "bookSection", "conferencePaper", "thesis", "webpage", "report", "patent", "preprint", "document" (use "document" if unsure)
 - title: The title of the work
 - authors: Array of objects with firstName and lastName
 - date: Full publication date if available (YYYY-MM-DD format preferred)
 - year: Publication year
-- publicationTitle: Journal name for articles, or publisher for books
+- publicationTitle: Journal name for articles
 - journalAbbreviation: Abbreviated journal name if known
 - volume: Volume number
 - issue: Issue number
@@ -15,7 +15,7 @@ For each reference, provide a structured JSON object with the following fields (
 - ISBN: International Standard Book Number
 - ISSN: International Standard Serial Number
 - url: Web URL if available
-- publisher: Publisher name
+- publisher: Publisher name (books, reports, etc.)
 - place: Place of publication
 - edition: Edition number/description
 - abstractNote: Abstract if provided
@@ -43,6 +43,7 @@ export const VALIDATION_PROMPT = `You are a bibliographic data validator. Review
 4. SUGGESTIONS: Ways to improve the data quality
 
 For each reference, provide:
+- _index: The numeric index of the reference in the input array (0-based). Preserve it.
 - isValid: boolean
 - errors: Array of critical issues that must be fixed
 - warnings: Array of potential issues that should be reviewed
