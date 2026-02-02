@@ -7,7 +7,7 @@ import { PreferencesManager } from "./preferences";
 import { LLMService } from "./llm";
 import { ZoteroImportService } from "./import";
 import { UIService } from "./ui";
-import { IndexValidationService } from "./indices";
+import { IndexValidationService, extractDoisFromText } from "./indices";
 import type { ExtractedReference, ValidationResult } from "./llm";
 
 type EnrichmentInfo = { fields: string[]; details: string };
@@ -330,6 +330,8 @@ class AddItemsFromTextPlugin {
     // Some Zotero platforms ignore dialog close for XHTML modal windows; ensure it's gone before processing.
     ui.closeTextInputDialogs();
 
+    const inputDois = extractDoisFromText(inputText);
+
     // Process the text
     const progress = ui.showProgressDialog(
       "Processing References",
@@ -404,7 +406,8 @@ class AddItemsFromTextPlugin {
             (current, total, title) => {
               const pct = 65 + Math.round((current / Math.max(total, 1)) * 25);
               progress.update(`Index lookup ${current}/${total}: ${title.substring(0, 50)}...`, pct);
-            }
+            },
+            { inputDois }
           );
 
         enrichmentInfo = computeEnrichmentDiffs(originalReferences, enriched);

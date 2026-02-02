@@ -32,6 +32,8 @@ interface IndexMatch {
 }
 
 const MAX_CONCURRENT_INDEX_REQUESTS = 3;
+const MIN_TITLE_SCORE_FOR_DOI_MATCH = 0.55;
+const MIN_CONTAINER_SCORE = 0.5;
 
 const DEFAULT_SOURCE_PRIORITIES: Record<IndexSource, number> = {
   gbv: 1,
@@ -122,6 +124,21 @@ function normalizeDOI(raw?: string): string {
     // ignore
   }
   return doi.trim();
+}
+
+export function extractDoisFromText(text: string): string[] {
+  if (!text) return [];
+  const matches = text.match(/10\.\d{4,9}\/[^\s<>"']+/gi) || [];
+  const cleaned = matches
+    .map((m) => {
+      let doi = m.trim();
+      while (/[).,;:\]]$/.test(doi)) {
+        doi = doi.slice(0, -1);
+      }
+      return normalizeDOI(doi);
+    })
+    .filter(Boolean);
+  return Array.from(new Set(cleaned));
 }
 
 function firstAuthorLastName(ref: ExtractedReference): string {
@@ -238,17 +255,25 @@ function scoreCandidate(
     doi?: string;
     year?: string;
     firstAuthorLastName?: string;
-  }
-): { score: number; doiMismatch: boolean } {
+    containerTitle?: string;
+  },
+  options?: { trustRefDoi?: boolean }
+): { score: number; doiMismatch: boolean; titleScore: number; containerScore: number } {
   const refDoi = normalizeDOI(ref.DOI);
   const candDoi = normalizeDOI(candidate.doi);
-
-  if (refDoi && candDoi) {
-    if (refDoi === candDoi) return { score: 1, doiMismatch: false };
-    return { score: 0, doiMismatch: true };
-  }
+  const trustRefDoi = options?.trustRefDoi ?? true;
 
   const titleScore = candidate.title ? diceCoefficient(ref.title || "", candidate.title) : 0;
+  const containerScore =
+    candidate.containerTitle && ref.publicationTitle
+      ? diceCoefficient(ref.publicationTitle, candidate.containerTitle)
+      : 0;
+
+  if (trustRefDoi && refDoi && candDoi) {
+    if (refDoi === candDoi) return { score: 1, doiMismatch: false, titleScore, containerScore };
+    return { score: 0, doiMismatch: true, titleScore, containerScore };
+  }
+
   const authorScore =
     firstAuthorLastName(ref) && candidate.firstAuthorLastName
       ? firstAuthorLastName(ref) === normalizeText(candidate.firstAuthorLastName)
@@ -258,8 +283,28 @@ function scoreCandidate(
 
   const yearScore = extractYear(ref) && candidate.year ? (extractYear(ref) === candidate.year ? 1 : 0) : 0;
 
-  const score = 0.75 * titleScore + 0.2 * authorScore + 0.05 * yearScore;
-  return { score, doiMismatch: false };
+  const weights: Array<{ score: number; weight: number }> = [];
+  if (ref.title && candidate.title) weights.push({ score: titleScore, weight: 0.6 });
+  if (ref.publicationTitle && candidate.containerTitle) weights.push({ score: containerScore, weight: 0.2 });
+  if (firstAuthorLastName(ref) && candidate.firstAuthorLastName) weights.push({ score: authorScore, weight: 0.15 });
+  if (extractYear(ref) && candidate.year) weights.push({ score: yearScore, weight: 0.05 });
+
+  const totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
+  const score =
+    totalWeight > 0
+      ? weights.reduce((sum, w) => sum + w.score * w.weight, 0) / totalWeight
+      : 0;
+  return { score, doiMismatch: false, titleScore, containerScore };
+}
+
+function hasSecondarySignal(ref: ExtractedReference, scored: { containerScore: number }, candidateYear?: string, candidateAuthorLastName?: string): boolean {
+  const authorMatch =
+    firstAuthorLastName(ref) &&
+    candidateAuthorLastName &&
+    firstAuthorLastName(ref) === normalizeText(candidateAuthorLastName);
+  const yearMatch = extractYear(ref) && candidateYear && extractYear(ref) === candidateYear;
+  const containerMatch = ref.publicationTitle && scored.containerScore >= MIN_CONTAINER_SCORE;
+  return !!(authorMatch || yearMatch || containerMatch);
 }
 
 async function runIndexTasks(
@@ -294,12 +339,17 @@ async function runIndexTasks(
   return results;
 }
 
-async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<IndexMatch> {
+async function matchCrossref(
+  ref: ExtractedReference,
+  mailto?: string,
+  trustedDois?: Set<string>
+): Promise<IndexMatch> {
   const doi = normalizeDOI(ref.DOI);
+  const doiTrusted = doi && trustedDois?.has(doi);
   const ua = `AddItemsFromText/1.0 (${mailto ? `mailto:${mailto}` : "no-mailto"})`;
 
   try {
-    if (doi) {
+    if (doi && doiTrusted) {
       const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
       const { status, data } = await requestJsonWithRetry(url, { headers: { "User-Agent": ua } });
       if (status === 404) {
@@ -316,12 +366,13 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
       const candidateFirstAuthor = item.author?.[0]?.family || item.author?.[0]?.literal || "";
       const candidateYear = item.published?.["date-parts"]?.[0]?.[0]?.toString() || item.created?.["date-parts"]?.[0]?.[0]?.toString() || "";
 
-      const { score, doiMismatch } = scoreCandidate(ref, {
+      const { score, doiMismatch, titleScore, containerScore } = scoreCandidate(ref, {
         title,
         doi: candDoi,
         year: candidateYear,
         firstAuthorLastName: candidateFirstAuthor,
-      });
+        containerTitle: Array.isArray(item["container-title"]) ? item["container-title"][0] : item["container-title"],
+      }, { trustRefDoi: !!doiTrusted });
 
       if (doiMismatch) {
         return {
@@ -329,6 +380,26 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
           status: "invalid",
           score: 0,
           explanation: `DOI resolves, but DOI mismatch (got ${candDoi})`,
+          url: item.URL,
+        };
+      }
+
+      if (ref.title && titleScore < MIN_TITLE_SCORE_FOR_DOI_MATCH) {
+        return {
+          source: "crossref",
+          status: "invalid",
+          score: titleScore,
+          explanation: `DOI resolves, but title mismatch (score ${titleScore.toFixed(2)})`,
+          url: item.URL,
+        };
+      }
+
+      if (!doiTrusted && !hasSecondarySignal(ref, { containerScore }, candidateYear, candidateFirstAuthor)) {
+        return {
+          source: "crossref",
+          status: "not_found",
+          score: titleScore,
+          explanation: "no secondary signal (author/container/year) to validate match",
           url: item.URL,
         };
       }
@@ -343,9 +414,10 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
               .filter((a: { firstName: string; lastName: string }) => a.firstName || a.lastName)
           : undefined;
 
+        const allowDoi = doiTrusted || hasSecondarySignal(ref, { containerScore }, candidateYear, candidateFirstAuthor);
         const patch: Partial<ExtractedReference> = {
           title: title || ref.title,
-          DOI: normalizeDOI(item.DOI) || ref.DOI,
+          DOI: allowDoi ? normalizeDOI(item.DOI) || ref.DOI : ref.DOI,
           url: item.URL || ref.url,
           authors: authors && authors.length ? authors : ref.authors,
           publicationTitle: Array.isArray(item["container-title"]) ? item["container-title"][0] : item["container-title"],
@@ -399,12 +471,17 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
       const title = Array.isArray(item.title) ? item.title[0] : item.title;
       const candidateFirstAuthor = item.author?.[0]?.family || item.author?.[0]?.literal || "";
       const candidateYear = item.published?.["date-parts"]?.[0]?.[0]?.toString() || item.created?.["date-parts"]?.[0]?.[0]?.toString() || "";
-      const { score } = scoreCandidate(ref, {
+      const { score, containerScore } = scoreCandidate(ref, {
         title,
         doi: item.DOI,
         year: candidateYear,
         firstAuthorLastName: candidateFirstAuthor,
-      });
+        containerTitle: Array.isArray(item["container-title"]) ? item["container-title"][0] : item["container-title"],
+      }, { trustRefDoi: !!doiTrusted });
+      const hasSecondary = hasSecondarySignal(ref, { containerScore }, candidateYear, candidateFirstAuthor);
+      if (!doiTrusted && !hasSecondary) {
+        continue;
+      }
       if (!best || score > best.score) {
         best = { item, score };
       }
@@ -418,6 +495,14 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
       const item = best.item;
       const title = Array.isArray(item.title) ? item.title[0] : item.title;
       const candidateYear = item.published?.["date-parts"]?.[0]?.[0]?.toString() || item.created?.["date-parts"]?.[0]?.[0]?.toString() || "";
+      const candidateFirstAuthor = item.author?.[0]?.family || item.author?.[0]?.literal || "";
+      const { containerScore } = scoreCandidate(ref, {
+        title,
+        doi: item.DOI,
+        year: candidateYear,
+        firstAuthorLastName: candidateFirstAuthor,
+        containerTitle: Array.isArray(item["container-title"]) ? item["container-title"][0] : item["container-title"],
+      }, { trustRefDoi: !!doiTrusted });
 
       const authors: ExtractedReference["authors"] = Array.isArray(item.author)
         ? item.author
@@ -428,9 +513,10 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
             .filter((a: { firstName: string; lastName: string }) => a.firstName || a.lastName)
         : undefined;
 
+      const allowDoi = doiTrusted || hasSecondarySignal(ref, { containerScore }, candidateYear, candidateFirstAuthor);
       const patch: Partial<ExtractedReference> = {
         title: title || ref.title,
-        DOI: normalizeDOI(item.DOI) || ref.DOI,
+        DOI: allowDoi ? normalizeDOI(item.DOI) || ref.DOI : ref.DOI,
         url: item.URL || ref.url,
         authors: authors && authors.length ? authors : ref.authors,
         publicationTitle: Array.isArray(item["container-title"]) ? item["container-title"][0] : item["container-title"],
@@ -467,12 +553,17 @@ async function matchCrossref(ref: ExtractedReference, mailto?: string): Promise<
   }
 }
 
-async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<IndexMatch> {
+async function matchOpenAlex(
+  ref: ExtractedReference,
+  mailto?: string,
+  trustedDois?: Set<string>
+): Promise<IndexMatch> {
   const doi = normalizeDOI(ref.DOI);
+  const doiTrusted = doi && trustedDois?.has(doi);
   const headers = { "User-Agent": "AddItemsFromText/1.0" };
 
   try {
-    if (doi) {
+    if (doi && doiTrusted) {
       const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}${mailto ? `?mailto=${encodeURIComponent(mailto)}` : ""}`;
       const { status, data } = await requestJsonWithRetry(url, { headers });
       if (status === 404) {
@@ -489,12 +580,13 @@ async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<
       const candidateFirstAuthor = work.authorships?.[0]?.author?.display_name || "";
       const candidateYear = work.publication_year?.toString() || "";
 
-      const { score, doiMismatch } = scoreCandidate(ref, {
+      const { score, doiMismatch, titleScore, containerScore } = scoreCandidate(ref, {
         title,
         doi: candDoi,
         year: candidateYear,
         firstAuthorLastName: candidateFirstAuthor.split(" ").slice(-1)[0],
-      });
+        containerTitle: work.host_venue?.display_name || "",
+      }, { trustRefDoi: !!doiTrusted });
 
       if (doiMismatch) {
         return {
@@ -502,6 +594,27 @@ async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<
           status: "invalid",
           score: 0,
           explanation: `DOI resolves, but DOI mismatch (got ${candDoi})`,
+          url: work.id,
+        };
+      }
+
+      if (ref.title && titleScore < MIN_TITLE_SCORE_FOR_DOI_MATCH) {
+        return {
+          source: "openalex",
+          status: "invalid",
+          score: titleScore,
+          explanation: `DOI resolves, but title mismatch (score ${titleScore.toFixed(2)})`,
+          url: work.id,
+        };
+      }
+
+      const candidateAuthor = candidateFirstAuthor.split(" ").slice(-1)[0];
+      if (!doiTrusted && !hasSecondarySignal(ref, { containerScore }, candidateYear, candidateAuthor)) {
+        return {
+          source: "openalex",
+          status: "not_found",
+          score: titleScore,
+          explanation: "no secondary signal (author/container/year) to validate match",
           url: work.id,
         };
       }
@@ -520,9 +633,10 @@ async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<
               .filter(Boolean)
           : undefined;
 
+        const allowDoi = doiTrusted || hasSecondarySignal(ref, { containerScore }, candidateYear, candidateAuthor);
         const patch: Partial<ExtractedReference> = {
           title: title || ref.title,
-          DOI: candDoi || ref.DOI,
+          DOI: allowDoi ? candDoi || ref.DOI : ref.DOI,
           url: work.primary_location?.landing_page_url || ref.url,
           authors: authors && authors.length ? authors : ref.authors,
           publicationTitle: work.host_venue?.display_name || ref.publicationTitle,
@@ -579,12 +693,17 @@ async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<
       const candidateFirstAuthor = work.authorships?.[0]?.author?.display_name || "";
       const candidateYear = work.publication_year?.toString() || "";
       const candDoi = typeof work.doi === "string" ? work.doi.replace(/^https?:\/\/doi\.org\//i, "") : "";
-      const { score } = scoreCandidate(ref, {
+      const { score, containerScore } = scoreCandidate(ref, {
         title,
         doi: candDoi,
         year: candidateYear,
         firstAuthorLastName: candidateFirstAuthor.split(" ").slice(-1)[0],
-      });
+        containerTitle: work.host_venue?.display_name || "",
+      }, { trustRefDoi: !!doiTrusted });
+      const candidateAuthor = candidateFirstAuthor.split(" ").slice(-1)[0];
+      if (!doiTrusted && !hasSecondarySignal(ref, { containerScore }, candidateYear, candidateAuthor)) {
+        continue;
+      }
       if (!best || score > best.score) best = { work, score };
     }
 
@@ -608,9 +727,11 @@ async function matchOpenAlex(ref: ExtractedReference, mailto?: string): Promise<
             .filter(Boolean)
         : undefined;
 
+      const candidateAuthor = work.authorships?.[0]?.author?.display_name || "";
+      const allowDoi = doiTrusted || hasSecondarySignal(ref, { containerScore: 0 }, candidateYear, candidateAuthor.split(" ").slice(-1)[0]);
       const patch: Partial<ExtractedReference> = {
         title: work.display_name || ref.title,
-        DOI: candDoi || ref.DOI,
+        DOI: allowDoi ? candDoi || ref.DOI : ref.DOI,
         url: work.primary_location?.landing_page_url || ref.url,
         authors: authors && authors.length ? authors : ref.authors,
         publicationTitle: work.host_venue?.display_name || ref.publicationTitle,
@@ -971,10 +1092,13 @@ async function matchGbvK10plus(ref: ExtractedReference, sruUrl?: string): Promis
   }
 }
 
-async function matchWikidata(ref: ExtractedReference): Promise<IndexMatch> {
+async function matchWikidata(
+  ref: ExtractedReference,
+  trustedDois?: Set<string>
+): Promise<IndexMatch> {
   const doi = normalizeDOI(ref.DOI);
   try {
-    if (doi) {
+    if (doi && trustedDois?.has(doi)) {
       const doiLc = doi.toLowerCase();
       const sparql = `
 SELECT ?work ?title ?date ?doi WHERE {
@@ -1003,7 +1127,10 @@ LIMIT 1
       const candidateYear = typeof dateVal === "string" ? (dateVal.match(/\b(\d{4})\b/)?.[1] || "") : "";
       const workUrl = binding.work?.value;
 
-      const { score } = scoreCandidate(ref, { title, doi, year: candidateYear });
+      const { score, titleScore } = scoreCandidate(ref, { title, doi, year: candidateYear });
+      if (ref.title && titleScore < MIN_TITLE_SCORE_FOR_DOI_MATCH) {
+        return { source: "wikidata", status: "invalid", score: titleScore, explanation: `DOI match but title mismatch (score ${titleScore.toFixed(2)})`, url: workUrl };
+      }
       if (score >= 0.8) {
         const patch: Partial<ExtractedReference> = {
           title,
@@ -1123,11 +1250,14 @@ export class IndexValidationService {
   static async validateAndEnrich(
     refs: ExtractedReference[],
     prefs: IndexPreferences,
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, message: string) => void,
+    context?: { inputDois?: string[] }
   ): Promise<{ references: ExtractedReference[]; validationResults: ValidationResult[] }> {
     if (!prefs.enabled) {
       return { references: refs, validationResults: refs.map(() => ({ isValid: true, errors: [], warnings: [], suggestions: [] })) };
     }
+
+    const trustedDois = new Set((context?.inputDois || []).map((d) => normalizeDOI(d)).filter(Boolean));
 
     const total = refs.length;
     const mergedRefs: ExtractedReference[] = [];
@@ -1138,12 +1268,12 @@ export class IndexValidationService {
       onProgress?.(i + 1, total, ref.title || `Reference ${i + 1}`);
 
       const tasks: Array<{ source: IndexSource; run: () => Promise<IndexMatch> }> = [];
-      if (prefs.crossref) tasks.push({ source: "crossref", run: () => matchCrossref(ref, prefs.crossrefMailto) });
-      if (prefs.openalex) tasks.push({ source: "openalex", run: () => matchOpenAlex(ref, prefs.openalexMailto) });
+      if (prefs.crossref) tasks.push({ source: "crossref", run: () => matchCrossref(ref, prefs.crossrefMailto, trustedDois) });
+      if (prefs.openalex) tasks.push({ source: "openalex", run: () => matchOpenAlex(ref, prefs.openalexMailto, trustedDois) });
       if (prefs.lobid) tasks.push({ source: "lobid", run: () => matchLobid(ref) });
       if (prefs.loc) tasks.push({ source: "loc", run: () => matchLoC(ref) });
       if (prefs.gbv) tasks.push({ source: "gbv", run: () => matchGbvK10plus(ref, prefs.gbvSruUrl) });
-      if (prefs.wikidata) tasks.push({ source: "wikidata", run: () => matchWikidata(ref) });
+      if (prefs.wikidata) tasks.push({ source: "wikidata", run: () => matchWikidata(ref, trustedDois) });
 
       const matches: IndexMatch[] = await runIndexTasks(tasks, MAX_CONCURRENT_INDEX_REQUESTS);
 
