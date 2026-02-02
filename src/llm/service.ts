@@ -1,4 +1,5 @@
 import { config } from "../config";
+import type { CancelToken } from "../cancel";
 import { PreferencesManager } from "../preferences";
 import { EXTRACTION_PROMPT, VALIDATION_PROMPT } from "./prompts";
 import { fetchGeminiModels, makeGeminiRequest } from "./providers/gemini";
@@ -75,35 +76,42 @@ export class LLMService {
     this.ollamaModel = (PreferencesManager.get("ollamaModel") || "").trim();
   }
 
-  private async makeRequest(prompt: string): Promise<string> {
+  private async makeRequest(prompt: string, cancelToken?: CancelToken): Promise<string> {
     this.updateFromPreferences();
+    cancelToken?.throwIfCanceled();
     if (this.provider === "openai_compatible") {
-      return makeOpenAICompatibleRequest({
+      const result = await makeOpenAICompatibleRequest({
         baseUrl: this.openaiBaseUrl,
         apiKey: this.openaiApiKey,
         model: this.openaiModel,
         prompt,
       });
+      cancelToken?.throwIfCanceled();
+      return result;
     }
     if (this.provider === "ollama") {
-      return makeOllamaRequest({
+      const result = await makeOllamaRequest({
         baseUrl: this.ollamaBaseUrl,
         model: this.ollamaModel,
         prompt,
       });
+      cancelToken?.throwIfCanceled();
+      return result;
     }
-    return makeGeminiRequest({
+    const result = await makeGeminiRequest({
       apiKey: this.geminiApiKey,
       baseUrl: this.geminiBaseUrl,
       model: this.geminiModel,
       prompt,
       maxTokens: config.gemini.maxTokens,
     });
+    cancelToken?.throwIfCanceled();
+    return result;
   }
 
-  async extractReferences(text: string): Promise<GeminiResponse> {
+  async extractReferences(text: string, cancelToken?: CancelToken): Promise<GeminiResponse> {
     const prompt = EXTRACTION_PROMPT + text;
-    const responseText = await this.makeRequest(prompt);
+    const responseText = await this.makeRequest(prompt, cancelToken);
 
     try {
       const parsed = parseJsonLenient(responseText) as {
@@ -214,11 +222,12 @@ export class LLMService {
   }
 
   async validateReferences(
-    references: ExtractedReference[]
+    references: ExtractedReference[],
+    cancelToken?: CancelToken
   ): Promise<ValidationResult[]> {
     const indexed = references.map((ref, index) => ({ ...(ref as ExtractedReference), _index: index }));
     const prompt = VALIDATION_PROMPT + JSON.stringify(indexed, null, 2);
-    const responseText = await this.makeRequest(prompt);
+    const responseText = await this.makeRequest(prompt, cancelToken);
 
     try {
       const parsed = parseJsonLenient(responseText);

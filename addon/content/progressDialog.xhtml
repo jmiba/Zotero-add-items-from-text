@@ -14,6 +14,7 @@
 <script type="application/javascript"><![CDATA[
 var ProgressDialog = {
   io: null,
+  cancelRequested: false,
   
   onLoad: function() {
     this.io = window.arguments[0];
@@ -25,6 +26,10 @@ var ProgressDialog = {
       }
       if (this.io.dataIn.message) {
         document.getElementById('progress-message').textContent = this.io.dataIn.message;
+      }
+      if (!this.io.dataIn.cancellable) {
+        var cancelBtn = document.getElementById('cancel-button');
+        if (cancelBtn) cancelBtn.setAttribute('hidden', 'true');
       }
     }
     
@@ -52,6 +57,20 @@ var ProgressDialog = {
   showError: function(title, message) {
     Services.prompt.alert(window, title, message);
   },
+
+  onCancel: function() {
+    if (this.cancelRequested) return;
+    this.cancelRequested = true;
+    var btn = document.getElementById('cancel-button');
+    if (btn) btn.setAttribute('disabled', 'true');
+    var msgEl = document.getElementById('progress-message');
+    if (msgEl) msgEl.textContent = 'Cancelling...';
+    try {
+      if (window.onCancelRequested) window.onCancelRequested();
+    } catch (e) {
+      // ignore
+    }
+  },
   
   closeDialog: function() {
     window.close();
@@ -68,6 +87,10 @@ var ProgressDialog = {
                  style="width: 100%; height: 20px;"
                  value="0"
                  max="100"></html:progress>
+
+  <hbox style="margin-top: 12px; justify-content: flex-end;">
+    <button id="cancel-button" label="Cancel" oncommand="ProgressDialog.onCancel();"/>
+  </hbox>
 </vbox>
 
 </window>

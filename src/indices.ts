@@ -1,4 +1,6 @@
 import { ExtractedReference, ValidationResult } from "./llm";
+import type { CancelToken } from "./cancel";
+import { CancelledError, isCancellationError } from "./cancel";
 
 export type IndexSource = "crossref" | "openalex" | "lobid" | "loc" | "gbv" | "wikidata";
 export type IndexStatus = "validated" | "invalid" | "not_found" | "error";
@@ -32,6 +34,7 @@ interface IndexMatch {
 }
 
 const MAX_CONCURRENT_INDEX_REQUESTS = 3;
+const MAX_CONCURRENT_REFERENCES = 2;
 const MIN_TITLE_SCORE_FOR_DOI_MATCH = 0.55;
 const MIN_CONTAINER_SCORE = 0.5;
 
@@ -196,6 +199,46 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getHeaderValue(response: unknown, name: string): string | null {
+  const lower = name.toLowerCase();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyResp = response as any;
+  try {
+    const direct = anyResp?.getResponseHeader?.(name);
+    if (direct) return String(direct);
+  } catch {
+    // ignore
+  }
+  const headers = anyResp?.headers ?? anyResp?.responseHeaders ?? anyResp?.responseHeadersString;
+  if (headers && typeof headers === "object") {
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() === lower && v) return String(v);
+    }
+  }
+  if (typeof headers === "string") {
+    const lines = headers.split(/\r?\n/);
+    for (const line of lines) {
+      const idx = line.indexOf(":");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim().toLowerCase();
+      if (key === lower) return line.slice(idx + 1).trim();
+    }
+  }
+  return null;
+}
+
+function parseRetryAfterSeconds(value: string | null): number | null {
+  if (!value) return null;
+  const asInt = parseInt(value, 10);
+  if (Number.isFinite(asInt) && asInt >= 0) return asInt;
+  const asDate = Date.parse(value);
+  if (!Number.isNaN(asDate)) {
+    const diff = Math.ceil((asDate - Date.now()) / 1000);
+    return diff > 0 ? diff : 0;
+  }
+  return null;
+}
+
 async function requestJsonWithRetry(
   url: string,
   options: {
@@ -203,13 +246,15 @@ async function requestJsonWithRetry(
     timeout?: number;
     successCodes?: number[];
   } = {},
-  maxAttempts = 3
+  maxAttempts = 3,
+  cancelToken?: CancelToken
 ): Promise<{ status: number; data: unknown }> {
   const successCodes = options.successCodes || [200, 404, 429, 500, 502, 503, 504];
   const timeout = options.timeout ?? 30000;
 
   let attempt = 0;
   while (true) {
+    cancelToken?.throwIfCanceled();
     attempt++;
     const response = await Zotero.HTTP.request("GET", url, {
       headers: {
@@ -243,7 +288,10 @@ async function requestJsonWithRetry(
       return { status, data };
     }
 
-    const backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 15000);
+    const retryAfter = parseRetryAfterSeconds(getHeaderValue(response, "Retry-After"));
+    const baseBackoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 15000);
+    const backoffMs = retryAfter !== null ? Math.max(baseBackoffMs, retryAfter * 1000) : baseBackoffMs;
+    cancelToken?.throwIfCanceled();
     await sleep(backoffMs);
   }
 }
@@ -309,7 +357,8 @@ function hasSecondarySignal(ref: ExtractedReference, scored: { containerScore: n
 
 async function runIndexTasks(
   tasks: Array<{ source: IndexSource; run: () => Promise<IndexMatch> }>,
-  concurrency: number
+  concurrency: number,
+  cancelToken?: CancelToken
 ): Promise<IndexMatch[]> {
   if (!tasks.length) return [];
   const limit = Math.max(1, Math.min(concurrency, tasks.length));
@@ -322,8 +371,13 @@ async function runIndexTasks(
       if (current >= tasks.length) break;
       const task = tasks[current];
       try {
+        cancelToken?.throwIfCanceled();
         results[current] = await task.run();
+        cancelToken?.throwIfCanceled();
       } catch (e) {
+        if (isCancellationError(e)) {
+          throw e;
+        }
         results[current] = {
           source: task.source,
           status: "error",
@@ -342,16 +396,18 @@ async function runIndexTasks(
 async function matchCrossref(
   ref: ExtractedReference,
   mailto?: string,
-  trustedDois?: Set<string>
+  trustedDois?: Set<string>,
+  cancelToken?: CancelToken
 ): Promise<IndexMatch> {
   const doi = normalizeDOI(ref.DOI);
   const doiTrusted = doi && trustedDois?.has(doi);
   const ua = `AddItemsFromText/1.0 (${mailto ? `mailto:${mailto}` : "no-mailto"})`;
 
   try {
+    cancelToken?.throwIfCanceled();
     if (doi && doiTrusted) {
       const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
-      const { status, data } = await requestJsonWithRetry(url, { headers: { "User-Agent": ua } });
+      const { status, data } = await requestJsonWithRetry(url, { headers: { "User-Agent": ua } }, 3, cancelToken);
       if (status === 404) {
         return { source: "crossref", status: "not_found", score: 0, explanation: "DOI not found" };
       }
@@ -454,7 +510,7 @@ async function matchCrossref(
 
     const query = encodeURIComponent(ref.title || "");
     const url = `https://api.crossref.org/works?query.bibliographic=${query}&rows=5`;
-    const { status, data } = await requestJsonWithRetry(url, { headers: { "User-Agent": ua } });
+    const { status, data } = await requestJsonWithRetry(url, { headers: { "User-Agent": ua } }, 3, cancelToken);
     if (status !== 200) {
       return { source: "crossref", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
     }
@@ -556,16 +612,18 @@ async function matchCrossref(
 async function matchOpenAlex(
   ref: ExtractedReference,
   mailto?: string,
-  trustedDois?: Set<string>
+  trustedDois?: Set<string>,
+  cancelToken?: CancelToken
 ): Promise<IndexMatch> {
   const doi = normalizeDOI(ref.DOI);
   const doiTrusted = doi && trustedDois?.has(doi);
   const headers = { "User-Agent": "AddItemsFromText/1.0" };
 
   try {
+    cancelToken?.throwIfCanceled();
     if (doi && doiTrusted) {
       const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}${mailto ? `?mailto=${encodeURIComponent(mailto)}` : ""}`;
-      const { status, data } = await requestJsonWithRetry(url, { headers });
+      const { status, data } = await requestJsonWithRetry(url, { headers }, 3, cancelToken);
       if (status === 404) {
         return { source: "openalex", status: "not_found", score: 0, explanation: "DOI not found" };
       }
@@ -675,7 +733,7 @@ async function matchOpenAlex(
     if (mailto) params.set("mailto", mailto);
 
     const url = `https://api.openalex.org/works?${params.toString()}`;
-    const { status, data } = await requestJsonWithRetry(url, { headers });
+    const { status, data } = await requestJsonWithRetry(url, { headers }, 3, cancelToken);
     if (status !== 200) {
       return { source: "openalex", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
     }
@@ -767,8 +825,9 @@ function buildLobidQuery(title: string, authorLastName?: string): string {
   return clauses.join(" AND ");
 }
 
-async function matchLobid(ref: ExtractedReference): Promise<IndexMatch> {
+async function matchLobid(ref: ExtractedReference, cancelToken?: CancelToken): Promise<IndexMatch> {
   try {
+    cancelToken?.throwIfCanceled();
     const query = buildLobidQuery(ref.title || "", firstAuthorLastName(ref));
     if (!query) {
       return { source: "lobid", status: "not_found", score: 0, explanation: "missing title" };
@@ -781,7 +840,7 @@ async function matchLobid(ref: ExtractedReference): Promise<IndexMatch> {
 
     const { status, data } = await requestJsonWithRetry(url, {
       headers: { "User-Agent": "AddItemsFromText/1.0", Accept: "application/json" },
-    });
+    }, 3, cancelToken);
 
     if (status !== 200) {
       return { source: "lobid", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
@@ -848,8 +907,9 @@ async function matchLobid(ref: ExtractedReference): Promise<IndexMatch> {
   }
 }
 
-async function matchLoC(ref: ExtractedReference): Promise<IndexMatch> {
+async function matchLoC(ref: ExtractedReference, cancelToken?: CancelToken): Promise<IndexMatch> {
   try {
+    cancelToken?.throwIfCanceled();
     // Use the general search with book filter for better coverage
     // Note: the loc.gov JSON API primarily indexes digitized/online content and may miss print-only books;
     // comprehensive LoC catalog access would require Z39.50/SRU (not implemented).
@@ -877,7 +937,7 @@ async function matchLoC(ref: ExtractedReference): Promise<IndexMatch> {
 
     const { status, data } = await requestJsonWithRetry(url, {
       headers: { "User-Agent": "AddItemsFromText/1.0" },
-    });
+    }, 3, cancelToken);
     if (status !== 200) {
       return { source: "loc", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
     }
@@ -991,9 +1051,10 @@ function extractIsbnFromIdentifiers(identifiers: string[]): string {
   return "";
 }
 
-async function matchGbvK10plus(ref: ExtractedReference, sruUrl?: string): Promise<IndexMatch> {
+async function matchGbvK10plus(ref: ExtractedReference, sruUrl?: string, cancelToken?: CancelToken): Promise<IndexMatch> {
   const baseUrl = (sruUrl || "https://sru.k10plus.de/gvk").trim();
   try {
+    cancelToken?.throwIfCanceled();
     // Get significant title words (filter short words, take up to 5 for AND query)
     const titleTokens = normalizeText(ref.title || "")
       .split(" ")
@@ -1030,6 +1091,7 @@ async function matchGbvK10plus(ref: ExtractedReference, sruUrl?: string): Promis
       timeout: 30000,
       successCodes: [200, 400, 404, 429, 500, 502, 503, 504],
     });
+    cancelToken?.throwIfCanceled();
 
     if (response.status !== 200) {
       return { source: "gbv", status: "error", score: 0, explanation: `search failed (HTTP ${response.status})`, url };
@@ -1094,10 +1156,12 @@ async function matchGbvK10plus(ref: ExtractedReference, sruUrl?: string): Promis
 
 async function matchWikidata(
   ref: ExtractedReference,
-  trustedDois?: Set<string>
+  trustedDois?: Set<string>,
+  cancelToken?: CancelToken
 ): Promise<IndexMatch> {
   const doi = normalizeDOI(ref.DOI);
   try {
+    cancelToken?.throwIfCanceled();
     if (doi && trustedDois?.has(doi)) {
       const doiLc = doi.toLowerCase();
       const sparql = `
@@ -1113,7 +1177,7 @@ LIMIT 1
       const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`;
       const { status, data } = await requestJsonWithRetry(url, {
         headers: { "User-Agent": "AddItemsFromText/1.0", Accept: "application/sparql-results+json" },
-      });
+      }, 3, cancelToken);
       if (status !== 200) {
         return { source: "wikidata", status: "error", score: 0, explanation: `SPARQL failed (HTTP ${status})` };
       }
@@ -1157,7 +1221,7 @@ LIMIT 1
     const url = `https://www.wikidata.org/w/api.php?${params.toString()}`;
     const { status, data } = await requestJsonWithRetry(url, {
       headers: { "User-Agent": "AddItemsFromText/1.0" },
-    });
+    }, 3, cancelToken);
     if (status !== 200) {
       return { source: "wikidata", status: "error", score: 0, explanation: `search failed (HTTP ${status})` };
     }
@@ -1251,31 +1315,31 @@ export class IndexValidationService {
     refs: ExtractedReference[],
     prefs: IndexPreferences,
     onProgress?: (current: number, total: number, message: string) => void,
-    context?: { inputDois?: string[] }
+    context?: { inputDois?: string[]; cancelToken?: CancelToken }
   ): Promise<{ references: ExtractedReference[]; validationResults: ValidationResult[] }> {
     if (!prefs.enabled) {
       return { references: refs, validationResults: refs.map(() => ({ isValid: true, errors: [], warnings: [], suggestions: [] })) };
     }
 
     const trustedDois = new Set((context?.inputDois || []).map((d) => normalizeDOI(d)).filter(Boolean));
+    const cancelToken = context?.cancelToken;
 
     const total = refs.length;
-    const mergedRefs: ExtractedReference[] = [];
-    const validations: ValidationResult[] = [];
+    const results: Array<{ ref: ExtractedReference; validation: ValidationResult; title: string }> = new Array(total);
+    let nextIndex = 0;
+    let completed = 0;
 
-    for (let i = 0; i < refs.length; i++) {
-      const ref = refs[i];
-      onProgress?.(i + 1, total, ref.title || `Reference ${i + 1}`);
-
+    const processReference = async (ref: ExtractedReference, index: number) => {
+      cancelToken?.throwIfCanceled();
       const tasks: Array<{ source: IndexSource; run: () => Promise<IndexMatch> }> = [];
-      if (prefs.crossref) tasks.push({ source: "crossref", run: () => matchCrossref(ref, prefs.crossrefMailto, trustedDois) });
-      if (prefs.openalex) tasks.push({ source: "openalex", run: () => matchOpenAlex(ref, prefs.openalexMailto, trustedDois) });
-      if (prefs.lobid) tasks.push({ source: "lobid", run: () => matchLobid(ref) });
-      if (prefs.loc) tasks.push({ source: "loc", run: () => matchLoC(ref) });
-      if (prefs.gbv) tasks.push({ source: "gbv", run: () => matchGbvK10plus(ref, prefs.gbvSruUrl) });
-      if (prefs.wikidata) tasks.push({ source: "wikidata", run: () => matchWikidata(ref, trustedDois) });
+      if (prefs.crossref) tasks.push({ source: "crossref", run: () => matchCrossref(ref, prefs.crossrefMailto, trustedDois, cancelToken) });
+      if (prefs.openalex) tasks.push({ source: "openalex", run: () => matchOpenAlex(ref, prefs.openalexMailto, trustedDois, cancelToken) });
+      if (prefs.lobid) tasks.push({ source: "lobid", run: () => matchLobid(ref, cancelToken) });
+      if (prefs.loc) tasks.push({ source: "loc", run: () => matchLoC(ref, cancelToken) });
+      if (prefs.gbv) tasks.push({ source: "gbv", run: () => matchGbvK10plus(ref, prefs.gbvSruUrl, cancelToken) });
+      if (prefs.wikidata) tasks.push({ source: "wikidata", run: () => matchWikidata(ref, trustedDois, cancelToken) });
 
-      const matches: IndexMatch[] = await runIndexTasks(tasks, MAX_CONCURRENT_INDEX_REQUESTS);
+      const matches: IndexMatch[] = await runIndexTasks(tasks, MAX_CONCURRENT_INDEX_REQUESTS, cancelToken);
 
       const best = matches
         .slice()
@@ -1323,10 +1387,39 @@ export class IndexValidationService {
         }
       }
 
-      mergedRefs.push(updated);
-      validations.push(validation);
+      return {
+        ref: updated,
+        validation,
+        title: ref.title || `Reference ${index + 1}`,
+      };
+    };
+
+    const worker = async () => {
+      while (true) {
+        cancelToken?.throwIfCanceled();
+        const index = nextIndex++;
+        if (index >= total) break;
+        const ref = refs[index];
+        const result = await processReference(ref, index);
+        results[index] = result;
+        completed += 1;
+        onProgress?.(completed, total, result.title);
+      }
+    };
+
+    const concurrency = Math.max(1, Math.min(MAX_CONCURRENT_REFERENCES, total));
+    const workers = Array.from({ length: concurrency }, () => worker());
+    try {
+      await Promise.all(workers);
+    } catch (e) {
+      if (isCancellationError(e)) {
+        throw e;
+      }
+      throw e;
     }
 
+    const mergedRefs: ExtractedReference[] = results.map((r) => r.ref);
+    const validations: ValidationResult[] = results.map((r) => r.validation);
     return { references: mergedRefs, validationResults: validations };
   }
 }

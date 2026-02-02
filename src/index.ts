@@ -9,6 +9,7 @@ import { ZoteroImportService } from "./import";
 import { UIService } from "./ui";
 import { IndexValidationService, extractDoisFromText } from "./indices";
 import type { ExtractedReference, ValidationResult } from "./llm";
+import { CancelToken, isCancellationError } from "./cancel";
 
 type EnrichmentInfo = { fields: string[]; details: string };
 
@@ -333,15 +334,17 @@ class AddItemsFromTextPlugin {
     const inputDois = extractDoisFromText(inputText);
 
     // Process the text
+    const cancelToken = new CancelToken();
     const progress = ui.showProgressDialog(
       "Processing References",
-      "Analyzing text with AI..."
+      "Analyzing text with AI...",
+      () => cancelToken.cancel()
     );
 
     try {
       // Extract references using Gemini
       progress.update("Extracting references from text...", 20);
-      const response = await this.llmService!.extractReferences(inputText);
+      const response = await this.llmService!.extractReferences(inputText, cancelToken);
 
       if (!response.references || response.references.length === 0) {
         progress.close();
@@ -362,7 +365,7 @@ class AddItemsFromTextPlugin {
           `Validating ${response.references.length} references...`,
           50
         );
-        validationResults = await this.llmService!.validateReferences(references);
+        validationResults = await this.llmService!.validateReferences(references, cancelToken);
       }
 
       // Validate/enrich via bibliographic indexes (Crossref/OpenAlex/lobid)
@@ -407,7 +410,7 @@ class AddItemsFromTextPlugin {
               const pct = 65 + Math.round((current / Math.max(total, 1)) * 25);
               progress.update(`Index lookup ${current}/${total}: ${title.substring(0, 50)}...`, pct);
             },
-            { inputDois }
+            { inputDois, cancelToken }
           );
 
         enrichmentInfo = computeEnrichmentDiffs(originalReferences, enriched);
@@ -475,6 +478,12 @@ class AddItemsFromTextPlugin {
       ui.closeTextInputDialogs();
     } catch (error) {
       Zotero.logError(error as Error);
+
+      if (isCancellationError(error) || cancelToken.isCanceled()) {
+        progress.close();
+        ui.closeTextInputDialogs();
+        return;
+      }
 
       const errorMessage = formatErrorMessage(error);
 

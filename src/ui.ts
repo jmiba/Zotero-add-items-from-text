@@ -157,14 +157,14 @@ export class UIService {
   /**
    * Show progress dialog during processing as a modal popup window
    */
-  showProgressDialog(title: string, message: string): {
+  showProgressDialog(title: string, message: string, onCancel?: () => void): {
     update: (message: string, progress?: number) => void;
     close: () => void;
     showError: (title: string, message: string) => void;
     dialogWindow: Window | null;
   } {
     const io = {
-      dataIn: { title, message },
+      dataIn: { title, message, cancellable: !!onCancel },
       dataOut: null
     };
     
@@ -180,7 +180,18 @@ export class UIService {
       updateProgress?: (msg: string, pct?: number) => void;
       closeDialog?: () => void;
       showError?: (title: string, msg: string) => void;
+      onCancelRequested?: () => void;
     };
+
+    if (dialogWindow && onCancel) {
+      dialogWindow.onCancelRequested = () => {
+        try {
+          onCancel();
+        } catch {
+          // ignore
+        }
+      };
+    }
 
     return {
       dialogWindow,
