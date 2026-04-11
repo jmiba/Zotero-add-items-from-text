@@ -6,7 +6,7 @@ function log(msg) {
   Zotero.debug("Add Items from Text: " + msg);
 }
 
-// Zotero 7/8 bootstrap entry points
+// Zotero 7/8/9 bootstrap entry points
 function install(data, reason) {
   log("Installed");
 }
@@ -14,7 +14,7 @@ function install(data, reason) {
 async function startup({ id, version, resourceURI, rootURI }, reason) {
   log("Starting up...");
   
-  // Handle both Zotero 6 (resourceURI) and Zotero 7/8 (rootURI)
+  // Handle both Zotero 6 (resourceURI) and Zotero 7/8/9 (rootURI)
   rootURI = rootURI || resourceURI.spec;
   
   try {

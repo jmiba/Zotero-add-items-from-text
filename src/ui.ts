@@ -344,7 +344,7 @@ export class UIService {
     Zotero.debug(`${config.addonName}: Found ${allToolbars.length} toolbar elements`);
     allToolbars.forEach(t => Zotero.debug(`  - ${t.tagName}#${t.id}`));
 
-    // Zotero 7/8 toolbar IDs
+    // Zotero 7/8/9 toolbar IDs
     const toolbarIds = [
       "zotero-items-toolbar",
       "zotero-editpane-item-box",
@@ -459,7 +459,7 @@ export class UIService {
     Zotero.debug(`${config.addonName}: Found ${allMenus.length} menu elements`);
     allMenus.forEach(m => Zotero.debug(`  - ${m.tagName}#${m.id}`));
     
-    // Try multiple possible menu IDs for Zotero 7/8
+    // Try multiple possible menu IDs for Zotero 7/8/9
     const menuIds = [
       "menu_ToolsPopup",
       "menu_Tools_Popup", 

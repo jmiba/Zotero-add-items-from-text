@@ -1,0 +1,31 @@
+site_name: Zotero Add Items from Text
+site_description: Extract and import bibliographic references from unstructured text in Zotero 7/8.
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Usage: usage.md
+  - Configuration: configuration.md
+  - Validation & Enrichment: validation-and-enrichment.md
+  - Reference Types: reference-types.md
+  - Troubleshooting: troubleshooting.md
+  - Privacy: privacy.md
+  - Development: development.md
+  - Publishing: publishing.md
