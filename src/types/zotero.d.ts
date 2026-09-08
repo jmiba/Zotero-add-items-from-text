@@ -133,8 +133,10 @@ declare interface ZoteroItem {
 }
 
 declare interface ZoteroPane {
-  getSelectedCollection(): ZoteroCollection | null;
-  getSelectedLibraryID(): number;
+  getSelectedCollections?(): ZoteroCollection[];
+  getSelectedCollection?(): ZoteroCollection | null;
+  getSelectedLibraryIDs?(): number[];
+  getSelectedLibraryID?(): number;
   getSelectedItems(): ZoteroItem[];
   itemsView: {
     selection: {

@@ -3,7 +3,7 @@
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17956351-blue)](https://doi.org/10.5281/zenodo.17956351)
 
 
-A Zotero 7/8/9 plugin that extracts and imports literature references from unstructured text using a configurable AI provider (Gemini, OpenAI-compatible, or Ollama). 
+A Zotero 7-10 plugin that extracts and imports literature references from unstructured text using a configurable AI provider (Gemini, OpenAI-compatible, or Ollama).
 
 ## Features
 
@@ -138,7 +138,7 @@ npm run watch
 
 ```
 ├── addon/                 # Plugin assets
-│   ├── bootstrap.js       # Zotero 7/8/9 bootstrap entry point
+│   ├── bootstrap.js       # Zotero 7-10 bootstrap entry point
 │   ├── manifest.json      # Plugin manifest
 │   ├── content/           # XUL/XHTML content
 │   └── locale/            # Localization files
@@ -189,5 +189,5 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 ## Acknowledgments
 
-- Built for [Zotero 7](https://www.zotero.org/), Zotero 8, and Zotero 9
+- Built for Zotero 7 through Zotero 10
 - Powered by a configurable AI provider (Gemini/OpenAI-compatible/Ollama)

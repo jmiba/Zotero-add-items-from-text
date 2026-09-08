@@ -202,8 +202,14 @@ export class ZoteroImportService {
   static getCurrentCollectionID(): number | undefined {
     try {
       const zoteroPane = Zotero.getActiveZoteroPane();
-      const collection = zoteroPane?.getSelectedCollection();
-      return collection?.id;
+      if (!zoteroPane) return undefined;
+
+      if (typeof zoteroPane.getSelectedCollections === "function") {
+        const collections = zoteroPane.getSelectedCollections();
+        return collections.length === 1 ? collections[0].id : undefined;
+      }
+
+      return zoteroPane.getSelectedCollection?.()?.id;
     } catch {
       return undefined;
     }
@@ -215,7 +221,14 @@ export class ZoteroImportService {
   static getCurrentLibraryID(): number {
     try {
       const zoteroPane = Zotero.getActiveZoteroPane();
-      return zoteroPane?.getSelectedLibraryID() || 1;
+      if (!zoteroPane) return 1;
+
+      if (typeof zoteroPane.getSelectedLibraryIDs === "function") {
+        const libraryIDs = zoteroPane.getSelectedLibraryIDs();
+        return libraryIDs.length === 1 ? libraryIDs[0] : 1;
+      }
+
+      return zoteroPane.getSelectedLibraryID?.() || 1;
     } catch {
       return 1;
     }
