@@ -82,11 +82,11 @@ var AddItemsFromTextPrefs = {
       // Gemini
       const geminiCache = this._readJsonPref(this._cachePrefGemini, null);
       const geminiModels = this._coerceStringArray(geminiCache?.models);
-      const geminiModelList = document.getElementById('add-items-from-text-model');
+      const geminiModelInput = document.getElementById('add-items-from-text-model');
       const geminiStatus = document.getElementById('add-items-from-text-model-status');
-      if (geminiModelList && geminiModels.length) {
+      if (geminiModelInput && geminiModels.length) {
         const current = Zotero.Prefs.get('extensions.zotero.additemsfromtext.defaultModel', true) || 'gemini-2.0-flash';
-        this._setMenulistOptions(geminiModelList, geminiModels, current);
+        this._setModelSuggestions(geminiModelInput, geminiModels, current);
         if (geminiStatus) {
           geminiStatus.value = 'Loaded cached models (' + geminiModels.length + ')';
           geminiStatus.style.color = '#666';
@@ -100,14 +100,13 @@ var AddItemsFromTextPrefs = {
       );
       const openaiCache = this._readJsonPref(this._cachePrefOpenAI, {});
       const openaiModels = this._coerceStringArray(openaiCache?.[openaiBaseUrl]?.models);
-      const openaiModelList = document.getElementById('add-items-from-text-openai-model');
+      const openaiModelInput = document.getElementById('add-items-from-text-openai-model');
       const openaiStatus = document.getElementById('add-items-from-text-openai-model-status');
-      if (openaiModelList && openaiModels.length) {
-        const filtered = this._filterLikelyLlmModelIds(openaiModels);
+      if (openaiModelInput && openaiModels.length) {
         const current = Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiModel', true) || '';
-        this._setMenulistOptions(openaiModelList, filtered, current);
+        this._setModelSuggestions(openaiModelInput, openaiModels, current);
         if (openaiStatus) {
-          openaiStatus.value = 'Loaded cached models (' + filtered.length + ')';
+          openaiStatus.value = 'Loaded cached models (' + openaiModels.length + ')';
           openaiStatus.style.color = '#666';
         }
       }
@@ -119,14 +118,13 @@ var AddItemsFromTextPrefs = {
       );
       const ollamaCache = this._readJsonPref(this._cachePrefOllama, {});
       const ollamaModels = this._coerceStringArray(ollamaCache?.[ollamaBaseUrl]?.models);
-      const ollamaModelList = document.getElementById('add-items-from-text-ollama-model');
+      const ollamaModelInput = document.getElementById('add-items-from-text-ollama-model');
       const ollamaStatus = document.getElementById('add-items-from-text-ollama-model-status');
-      if (ollamaModelList && ollamaModels.length) {
-        const filtered = ollamaModels.filter((n) => !/(embed|embedding)/i.test(String(n)));
+      if (ollamaModelInput && ollamaModels.length) {
         const current = Zotero.Prefs.get('extensions.zotero.additemsfromtext.ollamaModel', true) || '';
-        this._setMenulistOptions(ollamaModelList, filtered, current);
+        this._setModelSuggestions(ollamaModelInput, ollamaModels, current);
         if (ollamaStatus) {
-          ollamaStatus.value = 'Loaded cached models (' + filtered.length + ')';
+          ollamaStatus.value = 'Loaded cached models (' + ollamaModels.length + ')';
           ollamaStatus.style.color = '#666';
         }
       }
@@ -217,99 +215,38 @@ var AddItemsFromTextPrefs = {
     }
   },
 
-  _setMenulistOptions(menulist, values, currentValue) {
-    if (!menulist) return;
-    const menupopup = menulist.querySelector('menupopup');
-    if (!menupopup) return;
+  _setModelSuggestions(input, values, currentValue) {
+    if (!input) return;
+    const datalistId = input.getAttribute && input.getAttribute('list');
+    const datalist = datalistId && document.getElementById(datalistId);
+    if (!datalist) return;
 
-    while (menupopup.firstChild) {
-      menupopup.removeChild(menupopup.firstChild);
+    while (datalist.firstChild) {
+      datalist.removeChild(datalist.firstChild);
     }
 
-    const createMenuItem = (label, value) => {
-      try {
-        const item = document.createXULElement('menuitem');
-        item.setAttribute('label', label);
-        item.setAttribute('value', value);
-        return item;
-      } catch (e) {
-        const item = document.createElement('menuitem');
-        item.setAttribute('label', label);
-        item.setAttribute('value', value);
-        return item;
-      }
-    };
-
-    const unique = [];
-    const seen = new Set();
-    for (const v of values || []) {
-      if (!v || seen.has(v)) continue;
-      seen.add(v);
-      unique.push(v);
+    const unique = this._coerceStringArray(values);
+    for (const value of unique) {
+      const option = document.createElementNS
+        ? document.createElementNS('http://www.w3.org/1999/xhtml', 'option')
+        : document.createElement('option');
+      option.setAttribute('value', value);
+      datalist.appendChild(option);
     }
 
-    const maybeCurrent = (currentValue || '').trim();
-    if (maybeCurrent && !seen.has(maybeCurrent)) {
-      menupopup.appendChild(createMenuItem(maybeCurrent, maybeCurrent));
-      seen.add(maybeCurrent);
-    }
-
-    for (const v of unique) {
-      menupopup.appendChild(createMenuItem(v, v));
-    }
-
-    // Preserve selection if possible; otherwise select first item.
-    const selected = maybeCurrent && seen.has(maybeCurrent) ? maybeCurrent : unique[0] || maybeCurrent || '';
-    if (selected) {
-      try {
-        menulist.value = selected;
-      } catch (e) {
-        // ignore
-      }
-    }
+    // Refreshing suggestions must never replace a manually entered model ID.
+    const current = String(currentValue || input.value || '').trim();
+    if (current) input.value = current;
   },
 
-  _ensureMenulistHasValue(menulist, value) {
-    const v = String(value || '').trim();
-    if (!menulist || !v) return;
-    const menupopup = menulist.querySelector && menulist.querySelector('menupopup');
-    if (!menupopup) return;
-    try {
-      let found = false;
-      try {
-        for (const child of menupopup.children || []) {
-          if (child && child.getAttribute && child.getAttribute('value') === v) {
-            found = true;
-            break;
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-      if (!found) {
-        const item = document.createXULElement ? document.createXULElement('menuitem') : document.createElement('menuitem');
-        item.setAttribute('label', v);
-        item.setAttribute('value', v);
-        menupopup.appendChild(item);
-      }
-      try {
-        menulist.value = v;
-      } catch (e) {
-        // ignore
-      }
-    } catch (e) {
-      // ignore
-    }
-  },
-
-  _bindMenulistPreference(menulistId, prefName) {
-    const menulist = document.getElementById(menulistId);
-    if (!menulist) return;
+  _bindModelInputPreference(inputId, prefName) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
 
     // Avoid binding multiple times if init() is called repeatedly.
     try {
-      if (menulist.__addItemsFromTextPrefBound === prefName) return;
-      menulist.__addItemsFromTextPrefBound = prefName;
+      if (input.__addItemsFromTextPrefBound === prefName) return;
+      input.__addItemsFromTextPrefBound = prefName;
     } catch (e) {
       // ignore
     }
@@ -318,7 +255,7 @@ var AddItemsFromTextPrefs = {
       try {
         const v = Zotero.Prefs.get(prefName, true);
         if (v !== undefined && v !== null && v !== "undefined" && String(v).trim()) {
-          menulist.value = String(v);
+          input.value = String(v);
         }
       } catch (e) {
         // ignore
@@ -326,7 +263,7 @@ var AddItemsFromTextPrefs = {
     };
 
     const saveToPref = () => {
-      const v = this._getMenulistValue(menulist);
+      const v = String(input.value || '').trim();
       if (!v) return;
       try {
         Zotero.Prefs.set(prefName, v, true);
@@ -336,31 +273,10 @@ var AddItemsFromTextPrefs = {
     };
 
     loadFromPref();
-    // If the saved value isn't present in the default menu, add it so the selection isn't blank.
-    try {
-      const v = Zotero.Prefs.get(prefName, true);
-      if (v !== undefined && v !== null && v !== "undefined") {
-        this._ensureMenulistHasValue(menulist, v);
-      }
-    } catch (e) {
-      // ignore
-    }
-    // Persist selection changes explicitly (some panes don't auto-bind menulist -> pref).
-    menulist.addEventListener('command', saveToPref);
-    menulist.addEventListener('change', saveToPref);
-    try {
-      const popup = menulist.querySelector('menupopup');
-      if (popup) popup.addEventListener('command', saveToPref);
-    } catch (e) {
-      // ignore
-    }
-    // Ensure pref is set even if the current value comes from default menu items.
+    // Persist both typed values and suggestions selected from the datalist.
+    input.addEventListener('input', saveToPref);
+    input.addEventListener('change', saveToPref);
     saveToPref();
-  },
-
-  _filterLikelyLlmModelIds(ids) {
-    const deny = /(embedding|embed|whisper|transcrib|tts|audio|dall[- ]?e|image|vision|moderation|rerank|realtime)/i;
-    return (ids || []).map(String).filter((s) => s && !deny.test(s));
   },
 
   updateProviderVisibility() {
@@ -421,30 +337,10 @@ var AddItemsFromTextPrefs = {
       
       if (!data.models) throw new Error('No models returned');
       
-      // Filter to LLM text generation models only
-      // Exclude: embedding models, TTS, vision-only, robotics, etc.
+      // The API capability is authoritative. Do not hide compatible model IDs by name.
       const textModels = data.models.filter(m => {
-        const name = m.name.replace('models/', '');
         const methods = m.supportedGenerationMethods || [];
-        
-        // Must support generateContent
-        if (!methods.includes('generateContent')) return false;
-        
-        // Exclude non-LLM models by name patterns
-        if (name.includes('embedding')) return false;
-        if (name.includes('-tts')) return false;
-        if (name.includes('imagen')) return false;
-        if (name.includes('robotics')) return false;
-        if (name.includes('aqa')) return false;  // Attributed QA
-        if (name.includes('native-audio')) return false;
-        
-        // Only include gemini models (the actual LLMs)
-        if (!name.startsWith('gemini-') && !name.startsWith('gemma-')) return false;
-        
-        // Exclude gemma models (smaller, less suitable for reference extraction)
-        if (name.startsWith('gemma-')) return false;
-        
-        return true;
+        return methods.includes('generateContent');
       });
       
       // Sort: gemini-2.0 first, then gemini-2.5, then others
@@ -460,7 +356,7 @@ var AddItemsFromTextPrefs = {
       // Clear and rebuild menu
       const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.defaultModel', true) || 'gemini-2.0-flash';
       const values = textModels.map(m => m.name.replace('models/', '')).filter(Boolean);
-      this._setMenulistOptions(modelList, values, currentModel);
+      this._setModelSuggestions(modelList, values, currentModel);
       this._saveGeminiModelCache(values);
       
       statusLabel.value = 'Found ' + textModels.length + ' models';
@@ -520,9 +416,9 @@ AddItemsFromTextPrefs.refreshOpenAIModels = async function refreshOpenAIModels()
 
     const models = Array.isArray(data?.data) ? data.data : [];
     const allIds = models.map(m => m?.id).filter(Boolean);
-    const ids = this._filterLikelyLlmModelIds(allIds);
+    const ids = this._coerceStringArray(allIds);
     const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiModel', true) || '';
-    this._setMenulistOptions(modelList, ids, currentModel);
+    this._setModelSuggestions(modelList, ids, currentModel);
     this._saveOpenAIModelCache(baseUrl, ids);
 
     statusLabel.value = 'Found ' + ids.length + ' models';
@@ -575,10 +471,9 @@ AddItemsFromTextPrefs.refreshOllamaModels = async function refreshOllamaModels()
 
     const models = Array.isArray(data?.models) ? data.models : [];
     const allNames = models.map(m => m?.name).filter(Boolean);
-    // Drop common embedding-only models
-    const names = allNames.filter((n) => !/(embed|embedding)/i.test(String(n)));
+    const names = this._coerceStringArray(allNames);
     const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.ollamaModel', true) || '';
-    this._setMenulistOptions(modelList, names, currentModel);
+    this._setModelSuggestions(modelList, names, currentModel);
     this._saveOllamaModelCache(baseUrl, names);
 
     statusLabel.value = 'Found ' + names.length + ' models';
@@ -633,9 +528,9 @@ AddItemsFromTextPrefs.init = function init() {
       }
     }
 
-    this._bindMenulistPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
-    this._bindMenulistPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
-    this._bindMenulistPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
+    this._bindModelInputPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
+    this._bindModelInputPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
+    this._bindModelInputPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
 
     // Some preference panes apply the bound preference without firing DOM events.
     // Keep the UI in sync by watching the underlying pref while the pane is open.

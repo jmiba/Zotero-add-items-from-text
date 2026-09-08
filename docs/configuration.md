@@ -6,13 +6,17 @@ Open Zotero settings and select the "Add Items from Text" tab.
 
 Choose one provider and fill in the required fields.
 
+The model field accepts any model ID supported by the configured provider. Use
+**Refresh Models** to update its suggestions; discovery is optional and never
+replaces a model ID that you entered manually.
+
 ### Gemini
 
-Required: API key, model.
+Required: API key, model ID.
 
 ### OpenAI-compatible
 
-Required: base URL, API key, model.
+Required: base URL, API key (when required by the endpoint), model ID.
 
 ### Ollama
 

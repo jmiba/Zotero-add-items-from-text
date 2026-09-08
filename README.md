@@ -85,7 +85,7 @@ For GitHub Pages, see `docs/publishing.md` or use the included workflow at `.git
 1. Go to Zotero → Settings (or Preferences on macOS)
 2. Navigate to the "Add Items from Text" tab
 3. Choose an AI provider (Gemini / OpenAI-compatible / Ollama)
-4. Configure the provider (API key / base URL / model, depending on provider)
+4. Configure the provider (API key / base URL / model, depending on provider). You can enter any supported model ID directly; **Refresh Models** updates the suggestions without replacing a custom value.
 5. (Optional) Enable bibliographic index validation/enrichment, configure `mailto` values for polite API usage, and adjust source priorities if desired
 
 ## Usage

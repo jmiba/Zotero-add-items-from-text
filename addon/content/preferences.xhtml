@@ -38,16 +38,17 @@
 
       <hbox align="center" style="margin-top: 10px;">
         <label value="Model:" style="width: 80px;" />
-        <menulist id="add-items-from-text-model"
-                  preference="extensions.zotero.additemsfromtext.defaultModel"
-                  style="margin-left: 8px; min-width: 250px;">
-          <menupopup>
-            <menuitem label="Gemini 2.0 Flash (Recommended)" value="gemini-2.0-flash"/>
-            <menuitem label="Gemini 2.0 Flash Lite (Faster)" value="gemini-2.0-flash-lite"/>
-            <menuitem label="Gemini 2.5 Flash (Stronger, can 503 more)" value="gemini-2.5-flash"/>
-            <menuitem label="Gemini 2.5 Flash Lite (Stronger/Faster)" value="gemini-2.5-flash-lite"/>
-          </menupopup>
-        </menulist>
+        <html:input id="add-items-from-text-model"
+                    preference="extensions.zotero.additemsfromtext.defaultModel"
+                    list="add-items-from-text-gemini-model-suggestions"
+                    placeholder="gemini-2.0-flash"
+                    style="flex: 1; margin-left: 8px; min-width: 250px;" />
+        <html:datalist id="add-items-from-text-gemini-model-suggestions">
+          <html:option value="gemini-2.0-flash" />
+          <html:option value="gemini-2.0-flash-lite" />
+          <html:option value="gemini-2.5-flash" />
+          <html:option value="gemini-2.5-flash-lite" />
+        </html:datalist>
         <button id="add-items-from-text-refresh-models"
                 label="Refresh Models"
                 oncommand="AddItemsFromTextPrefs.refreshModels();"
@@ -56,6 +57,9 @@
       <hbox style="margin-top: 5px; margin-left: 88px;">
         <label id="add-items-from-text-model-status" value="" style="font-size: 11px; color: #666;" />
       </hbox>
+      <description style="margin-top: 3px; margin-left: 88px; font-size: 11px; color: #666;">
+        Enter any Gemini model ID, or refresh to update the suggestions.
+      </description>
     </vbox>
 
     <vbox id="add-items-from-text-provider-openai" style="margin-top: 10px;" hidden="true">
@@ -82,13 +86,14 @@
 
       <hbox align="center" style="margin-top: 10px;">
         <label value="Model:" style="width: 80px;" />
-        <menulist id="add-items-from-text-openai-model"
-                  preference="extensions.zotero.additemsfromtext.openaiModel"
-                  style="margin-left: 8px; min-width: 250px;">
-          <menupopup>
-            <menuitem label="gpt-4o-mini" value="gpt-4o-mini"/>
-          </menupopup>
-        </menulist>
+        <html:input id="add-items-from-text-openai-model"
+                    preference="extensions.zotero.additemsfromtext.openaiModel"
+                    list="add-items-from-text-openai-model-suggestions"
+                    placeholder="gpt-4o-mini"
+                    style="flex: 1; margin-left: 8px; min-width: 250px;" />
+        <html:datalist id="add-items-from-text-openai-model-suggestions">
+          <html:option value="gpt-4o-mini" />
+        </html:datalist>
         <button id="add-items-from-text-refresh-openai-models"
                 label="Refresh Models"
                 oncommand="AddItemsFromTextPrefs.refreshOpenAIModels();"
@@ -97,6 +102,9 @@
       <hbox style="margin-top: 5px; margin-left: 88px;">
         <label id="add-items-from-text-openai-model-status" value="" style="font-size: 11px; color: #666;" />
       </hbox>
+      <description style="margin-top: 3px; margin-left: 88px; font-size: 11px; color: #666;">
+        Enter the exact model ID accepted by the endpoint, or refresh the suggestions.
+      </description>
     </vbox>
 
     <vbox id="add-items-from-text-provider-ollama" style="margin-top: 10px;" hidden="true">
@@ -115,13 +123,14 @@
 
       <hbox align="center" style="margin-top: 10px;">
         <label value="Model:" style="width: 80px;" />
-        <menulist id="add-items-from-text-ollama-model"
-                  preference="extensions.zotero.additemsfromtext.ollamaModel"
-                  style="margin-left: 8px; min-width: 250px;">
-          <menupopup>
-            <menuitem label="llama3.2" value="llama3.2"/>
-          </menupopup>
-        </menulist>
+        <html:input id="add-items-from-text-ollama-model"
+                    preference="extensions.zotero.additemsfromtext.ollamaModel"
+                    list="add-items-from-text-ollama-model-suggestions"
+                    placeholder="llama3.2"
+                    style="flex: 1; margin-left: 8px; min-width: 250px;" />
+        <html:datalist id="add-items-from-text-ollama-model-suggestions">
+          <html:option value="llama3.2" />
+        </html:datalist>
         <button id="add-items-from-text-refresh-ollama-models"
                 label="Refresh Models"
                 oncommand="AddItemsFromTextPrefs.refreshOllamaModels();"
@@ -130,6 +139,9 @@
       <hbox style="margin-top: 5px; margin-left: 88px;">
         <label id="add-items-from-text-ollama-model-status" value="" style="font-size: 11px; color: #666;" />
       </hbox>
+      <description style="margin-top: 3px; margin-left: 88px; font-size: 11px; color: #666;">
+        Enter any installed Ollama model name, or refresh to update the suggestions.
+      </description>
     </vbox>
   </groupbox>
   
@@ -281,7 +293,7 @@
       from unstructured text and import them into your Zotero library.
     </description>
     <description style="margin-top: 5px; font-size: 11px; color: #666;">
-      Version 1.0.13
+      Version 1.0.14
     </description>
   </groupbox>
 
