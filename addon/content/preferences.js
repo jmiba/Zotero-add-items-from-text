@@ -83,10 +83,14 @@ var AddItemsFromTextPrefs = {
       const geminiCache = this._readJsonPref(this._cachePrefGemini, null);
       const geminiModels = this._coerceStringArray(geminiCache?.models);
       const geminiModelInput = document.getElementById('add-items-from-text-model');
+      const geminiModelPicker = document.getElementById('add-items-from-text-model-picker');
       const geminiStatus = document.getElementById('add-items-from-text-model-status');
-      if (geminiModelInput && geminiModels.length) {
+      if (geminiModelPicker && geminiModels.length) {
         const current = Zotero.Prefs.get('extensions.zotero.additemsfromtext.defaultModel', true) || 'gemini-2.0-flash';
-        this._setModelSuggestions(geminiModelInput, geminiModels, current);
+        this._setDetectedModelOptions(geminiModelPicker, geminiModels, current);
+        if (geminiModelInput && !String(geminiModelInput.value || '').trim()) {
+          geminiModelInput.value = current;
+        }
         if (geminiStatus) {
           geminiStatus.value = 'Loaded cached models (' + geminiModels.length + ')';
           geminiStatus.style.color = '#666';
@@ -101,10 +105,14 @@ var AddItemsFromTextPrefs = {
       const openaiCache = this._readJsonPref(this._cachePrefOpenAI, {});
       const openaiModels = this._coerceStringArray(openaiCache?.[openaiBaseUrl]?.models);
       const openaiModelInput = document.getElementById('add-items-from-text-openai-model');
+      const openaiModelPicker = document.getElementById('add-items-from-text-openai-model-picker');
       const openaiStatus = document.getElementById('add-items-from-text-openai-model-status');
-      if (openaiModelInput && openaiModels.length) {
+      if (openaiModelPicker && openaiModels.length) {
         const current = Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiModel', true) || '';
-        this._setModelSuggestions(openaiModelInput, openaiModels, current);
+        this._setDetectedModelOptions(openaiModelPicker, openaiModels, current);
+        if (openaiModelInput && !String(openaiModelInput.value || '').trim()) {
+          openaiModelInput.value = current;
+        }
         if (openaiStatus) {
           openaiStatus.value = 'Loaded cached models (' + openaiModels.length + ')';
           openaiStatus.style.color = '#666';
@@ -119,10 +127,14 @@ var AddItemsFromTextPrefs = {
       const ollamaCache = this._readJsonPref(this._cachePrefOllama, {});
       const ollamaModels = this._coerceStringArray(ollamaCache?.[ollamaBaseUrl]?.models);
       const ollamaModelInput = document.getElementById('add-items-from-text-ollama-model');
+      const ollamaModelPicker = document.getElementById('add-items-from-text-ollama-model-picker');
       const ollamaStatus = document.getElementById('add-items-from-text-ollama-model-status');
-      if (ollamaModelInput && ollamaModels.length) {
+      if (ollamaModelPicker && ollamaModels.length) {
         const current = Zotero.Prefs.get('extensions.zotero.additemsfromtext.ollamaModel', true) || '';
-        this._setModelSuggestions(ollamaModelInput, ollamaModels, current);
+        this._setDetectedModelOptions(ollamaModelPicker, ollamaModels, current);
+        if (ollamaModelInput && !String(ollamaModelInput.value || '').trim()) {
+          ollamaModelInput.value = current;
+        }
         if (ollamaStatus) {
           ollamaStatus.value = 'Loaded cached models (' + ollamaModels.length + ')';
           ollamaStatus.style.color = '#666';
@@ -215,32 +227,65 @@ var AddItemsFromTextPrefs = {
     }
   },
 
-  _setModelSuggestions(input, values, currentValue) {
-    if (!input) return;
-    const datalistId = input.getAttribute && input.getAttribute('list');
-    const datalist = datalistId && document.getElementById(datalistId);
-    if (!datalist) return;
+  _setDetectedModelOptions(picker, values, currentValue) {
+    if (!picker) return;
+    const menupopup = picker.querySelector && picker.querySelector('menupopup');
+    if (!menupopup) return;
 
-    while (datalist.firstChild) {
-      datalist.removeChild(datalist.firstChild);
+    while (menupopup.firstChild) {
+      menupopup.removeChild(menupopup.firstChild);
     }
 
+    const createMenuItem = (label, value, disabled) => {
+      const item = document.createXULElement
+        ? document.createXULElement('menuitem')
+        : document.createElement('menuitem');
+      item.setAttribute('label', label);
+      item.setAttribute('value', value);
+      if (disabled) item.setAttribute('disabled', 'true');
+      return item;
+    };
+
+    menupopup.appendChild(createMenuItem('Select a detected model…', '', true));
     const unique = this._coerceStringArray(values);
     for (const value of unique) {
-      const option = document.createElementNS
-        ? document.createElementNS('http://www.w3.org/1999/xhtml', 'option')
-        : document.createElement('option');
-      option.setAttribute('value', value);
-      datalist.appendChild(option);
+      menupopup.appendChild(createMenuItem(value, value, false));
     }
 
-    // Refreshing suggestions must never replace a manually entered model ID.
-    const current = String(currentValue || input.value || '').trim();
-    if (current) input.value = current;
+    // Reflect the active model only if it was actually detected. Otherwise leave
+    // the picker on its placeholder and preserve the custom Model ID field.
+    const current = String(currentValue || '').trim();
+    const detectedIndex = current ? unique.indexOf(current) : -1;
+    try {
+      picker.selectedIndex = detectedIndex >= 0 ? detectedIndex + 1 : 0;
+      picker.value = detectedIndex >= 0 ? current : '';
+    } catch (e) {
+      // ignore
+    }
   },
 
-  _bindModelInputPreference(inputId, prefName) {
+  _selectDetectedModelValue(picker, value) {
+    if (!picker) return;
+    const v = String(value || '').trim();
+    const menupopup = picker.querySelector && picker.querySelector('menupopup');
+    if (!menupopup) return;
+    let selectedIndex = 0;
+    try {
+      const children = Array.from(menupopup.children || []);
+      const matchIndex = children.findIndex((child) =>
+        child && child.getAttribute && child.getAttribute('value') === v
+      );
+      if (matchIndex >= 1) selectedIndex = matchIndex;
+      picker.selectedIndex = selectedIndex;
+      picker.value = selectedIndex >= 1 ? v : '';
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  _bindModelInputPreference(inputId, prefName, pickerId) {
     const input = document.getElementById(inputId);
+    const picker = document.getElementById(pickerId);
     if (!input) return;
 
     // Avoid binding multiple times if init() is called repeatedly.
@@ -267,16 +312,50 @@ var AddItemsFromTextPrefs = {
       if (!v) return;
       try {
         Zotero.Prefs.set(prefName, v, true);
+        this._selectDetectedModelValue(picker, v);
       } catch (e) {
         // ignore
       }
     };
 
     loadFromPref();
-    // Persist both typed values and suggestions selected from the datalist.
+    // Persist typed values and keep the detected-model picker in sync.
     input.addEventListener('input', saveToPref);
     input.addEventListener('change', saveToPref);
     saveToPref();
+  },
+
+  _bindDetectedModelPicker(pickerId, inputId, prefName) {
+    const picker = document.getElementById(pickerId);
+    const input = document.getElementById(inputId);
+    if (!picker || !input) return;
+
+    try {
+      if (picker.__addItemsFromTextModelPickerBound === prefName) return;
+      picker.__addItemsFromTextModelPickerBound = prefName;
+    } catch (e) {
+      // ignore
+    }
+
+    const applySelection = () => {
+      const value = this._getMenulistValue(picker);
+      if (!value) return;
+      input.value = value;
+      try {
+        Zotero.Prefs.set(prefName, value, true);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    picker.addEventListener('command', applySelection);
+    picker.addEventListener('change', applySelection);
+    try {
+      const popup = picker.querySelector('menupopup');
+      if (popup) popup.addEventListener('command', applySelection);
+    } catch (e) {
+      // ignore
+    }
   },
 
   updateProviderVisibility() {
@@ -305,7 +384,7 @@ var AddItemsFromTextPrefs = {
     }
 
     const apiKeyInput = document.getElementById('add-items-from-text-api-key');
-    const modelList = document.getElementById('add-items-from-text-model');
+    const modelPicker = document.getElementById('add-items-from-text-model-picker');
     const refreshBtn = document.getElementById('add-items-from-text-refresh-models');
     const statusLabel = document.getElementById('add-items-from-text-model-status');
     
@@ -356,7 +435,7 @@ var AddItemsFromTextPrefs = {
       // Clear and rebuild menu
       const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.defaultModel', true) || 'gemini-2.0-flash';
       const values = textModels.map(m => m.name.replace('models/', '')).filter(Boolean);
-      this._setModelSuggestions(modelList, values, currentModel);
+      this._setDetectedModelOptions(modelPicker, values, currentModel);
       this._saveGeminiModelCache(values);
       
       statusLabel.value = 'Found ' + textModels.length + ' models';
@@ -379,7 +458,7 @@ AddItemsFromTextPrefs.refreshOpenAIModels = async function refreshOpenAIModels()
 
   const baseUrlInput = document.getElementById('add-items-from-text-openai-base-url');
   const apiKeyInput = document.getElementById('add-items-from-text-openai-api-key');
-  const modelList = document.getElementById('add-items-from-text-openai-model');
+  const modelPicker = document.getElementById('add-items-from-text-openai-model-picker');
   const refreshBtn = document.getElementById('add-items-from-text-refresh-openai-models');
   const statusLabel = document.getElementById('add-items-from-text-openai-model-status');
 
@@ -418,7 +497,7 @@ AddItemsFromTextPrefs.refreshOpenAIModels = async function refreshOpenAIModels()
     const allIds = models.map(m => m?.id).filter(Boolean);
     const ids = this._coerceStringArray(allIds);
     const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.openaiModel', true) || '';
-    this._setModelSuggestions(modelList, ids, currentModel);
+    this._setDetectedModelOptions(modelPicker, ids, currentModel);
     this._saveOpenAIModelCache(baseUrl, ids);
 
     statusLabel.value = 'Found ' + ids.length + ' models';
@@ -438,7 +517,7 @@ AddItemsFromTextPrefs.refreshOllamaModels = async function refreshOllamaModels()
   if (provider !== 'ollama') return;
 
   const baseUrlInput = document.getElementById('add-items-from-text-ollama-base-url');
-  const modelList = document.getElementById('add-items-from-text-ollama-model');
+  const modelPicker = document.getElementById('add-items-from-text-ollama-model-picker');
   const refreshBtn = document.getElementById('add-items-from-text-refresh-ollama-models');
   const statusLabel = document.getElementById('add-items-from-text-ollama-model-status');
 
@@ -473,7 +552,7 @@ AddItemsFromTextPrefs.refreshOllamaModels = async function refreshOllamaModels()
     const allNames = models.map(m => m?.name).filter(Boolean);
     const names = this._coerceStringArray(allNames);
     const currentModel = Zotero.Prefs.get('extensions.zotero.additemsfromtext.ollamaModel', true) || '';
-    this._setModelSuggestions(modelList, names, currentModel);
+    this._setDetectedModelOptions(modelPicker, names, currentModel);
     this._saveOllamaModelCache(baseUrl, names);
 
     statusLabel.value = 'Found ' + names.length + ' models';
@@ -528,9 +607,12 @@ AddItemsFromTextPrefs.init = function init() {
       }
     }
 
-    this._bindModelInputPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
-    this._bindModelInputPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
-    this._bindModelInputPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
+    this._bindModelInputPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel', 'add-items-from-text-model-picker');
+    this._bindModelInputPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel', 'add-items-from-text-openai-model-picker');
+    this._bindModelInputPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel', 'add-items-from-text-ollama-model-picker');
+    this._bindDetectedModelPicker('add-items-from-text-model-picker', 'add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
+    this._bindDetectedModelPicker('add-items-from-text-openai-model-picker', 'add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
+    this._bindDetectedModelPicker('add-items-from-text-ollama-model-picker', 'add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
 
     // Some preference panes apply the bound preference without firing DOM events.
     // Keep the UI in sync by watching the underlying pref while the pane is open.

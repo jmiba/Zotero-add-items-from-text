@@ -6,9 +6,10 @@ Open Zotero settings and select the "Add Items from Text" tab.
 
 Choose one provider and fill in the required fields.
 
-The model field accepts any model ID supported by the configured provider. Use
-**Refresh Models** to update its suggestions; discovery is optional and never
-replaces a model ID that you entered manually.
+The **Detected** dropdown lists models reported by the configured provider. Use
+**Refresh Models** to update that list, then select an entry to copy it into the
+active **Model ID** field. You can also enter any supported model ID directly;
+discovery is optional and never replaces a custom value.
 
 ### Gemini
 
