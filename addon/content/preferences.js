@@ -54,6 +54,18 @@ var AddItemsFromTextPrefs = {
     }
   },
 
+  _formatCacheAge(updatedAt) {
+    const ms = Number(updatedAt);
+    if (!ms || Number.isNaN(ms) || ms <= 0) return '';
+    const age = Date.now() - ms;
+    if (age < 90 * 1000) return 'just now';
+    const minutes = Math.floor(age / 60000);
+    if (minutes < 60) return minutes + ' min ago';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + ' h ago';
+    return Math.floor(hours / 24) + ' d ago';
+  },
+
   _saveGeminiModelCache(models) {
     const list = this._coerceStringArray(models);
     this._writeJsonPref(this._cachePrefGemini, { updatedAt: Date.now(), models: list });
@@ -92,9 +104,13 @@ var AddItemsFromTextPrefs = {
           geminiModelInput.value = current;
         }
         if (geminiStatus) {
-          geminiStatus.value = 'Loaded cached models (' + geminiModels.length + ')';
+          const age = this._formatCacheAge(geminiCache && geminiCache.updatedAt);
+          geminiStatus.value = 'Loaded ' + geminiModels.length + ' cached models' + (age ? ' (' + age + ')' : '');
           geminiStatus.style.color = '#666';
         }
+      } else if (geminiModelPicker && geminiStatus) {
+        geminiStatus.value = 'No cached models yet — press Refresh Models to detect them';
+        geminiStatus.style.color = '#666';
       }
 
       // OpenAI-compatible (keyed by baseUrl)
@@ -114,9 +130,13 @@ var AddItemsFromTextPrefs = {
           openaiModelInput.value = current;
         }
         if (openaiStatus) {
-          openaiStatus.value = 'Loaded cached models (' + openaiModels.length + ')';
+          const age = this._formatCacheAge(openaiCache && openaiBaseUrl && openaiCache[openaiBaseUrl] && openaiCache[openaiBaseUrl].updatedAt);
+          openaiStatus.value = 'Loaded ' + openaiModels.length + ' cached models' + (age ? ' (' + age + ')' : '');
           openaiStatus.style.color = '#666';
         }
+      } else if (openaiModelPicker && openaiStatus) {
+        openaiStatus.value = 'No cached models yet — press Refresh Models to detect them';
+        openaiStatus.style.color = '#666';
       }
 
       // Ollama (keyed by baseUrl)
@@ -136,9 +156,13 @@ var AddItemsFromTextPrefs = {
           ollamaModelInput.value = current;
         }
         if (ollamaStatus) {
-          ollamaStatus.value = 'Loaded cached models (' + ollamaModels.length + ')';
+          const age = this._formatCacheAge(ollamaCache && ollamaBaseUrl && ollamaCache[ollamaBaseUrl] && ollamaCache[ollamaBaseUrl].updatedAt);
+          ollamaStatus.value = 'Loaded ' + ollamaModels.length + ' cached models' + (age ? ' (' + age + ')' : '');
           ollamaStatus.style.color = '#666';
         }
+      } else if (ollamaModelPicker && ollamaStatus) {
+        ollamaStatus.value = 'No cached models yet — press Refresh Models to detect them';
+        ollamaStatus.style.color = '#666';
       }
     } catch (e) {
       // ignore
@@ -206,12 +230,6 @@ var AddItemsFromTextPrefs = {
         Zotero.Prefs.set(pref, value, true);
       }
     }
-
-    // If the preference binding ended up writing the string "undefined" into the input, fix it.
-    const gbvInput = document.getElementById('add-items-from-text-gbv-sru-url');
-    if (gbvInput && (gbvInput.value === "undefined" || gbvInput.value === "")) {
-      gbvInput.value = Zotero.Prefs.get('extensions.zotero.additemsfromtext.gbvSruUrl', true) || defaults['extensions.zotero.additemsfromtext.gbvSruUrl'];
-    }
   },
 
   _setHidden(el, hidden) {
@@ -251,6 +269,7 @@ var AddItemsFromTextPrefs = {
     for (const value of unique) {
       menupopup.appendChild(createMenuItem(value, value, false));
     }
+    this._bindDetectedModelItems(picker);
 
     // Reflect the active model only if it was actually detected. Otherwise leave
     // the picker on its placeholder and preserve the custom Model ID field.
@@ -281,6 +300,110 @@ var AddItemsFromTextPrefs = {
     } catch (e) {
       // ignore
     }
+  },
+
+  _applyDetectedModelValue(picker, value) {
+    const v = String(value || '').trim();
+    const inputId = picker && picker.__addItemsFromTextModelInputId;
+    const prefName = picker && picker.__addItemsFromTextModelPrefName;
+    const input = inputId && document.getElementById(inputId);
+    if (!v || !input || !prefName) return;
+    if (String(input.value || '').trim() === v) return;
+    input.value = v;
+    try {
+      Zotero.Prefs.set(prefName, v, true);
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  _bindDetectedModelItems(picker) {
+    if (!picker || !picker.__addItemsFromTextModelInputId) return;
+    const popup = picker.querySelector && picker.querySelector('menupopup');
+    if (!popup) return;
+    try {
+      // Gecko exposes element.children as a non-iterable HTMLCollection, so
+      // Array.from is required (for...of throws TypeError there).
+      const items = Array.from(popup.children || []);
+      for (const item of items) {
+        const value = item && item.getAttribute && item.getAttribute('value');
+        if (!value || !item.addEventListener || item.__addItemsFromTextModelItemBound) continue;
+        item.__addItemsFromTextModelItemBound = true;
+        item.addEventListener('command', () => {
+          this._applyDetectedModelValue(picker, item.getAttribute('value'));
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  _observeDetectedModelValue(picker) {
+    if (!picker || !picker.__addItemsFromTextModelInputId) return;
+    try {
+      if (picker.__addItemsFromTextValueObserverBound) return;
+      if (typeof MutationObserver === 'undefined') return;
+      picker.__addItemsFromTextValueObserverBound = true;
+      // Gecko updates the menulist `value` attribute on user selection (the
+      // same mechanism that drives `preference=`-bound menulists), so a
+      // mutation observer is the most reliable cross-platform selection
+      // signal, independent of command event bubbling or dispatch order.
+      const observer = new MutationObserver(() => {
+        this._applyDetectedModelValue(picker, this._getMenulistValue(picker));
+      });
+      observer.observe(picker, { attributes: true, attributeFilter: ['value'] });
+      picker.__addItemsFromTextValueObserver = observer;
+      if (!this._modelValueObservers) this._modelValueObservers = [];
+      this._modelValueObservers.push(observer);
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  _bindRefreshButton(buttonId, methodName) {
+    const button = document.getElementById(buttonId);
+    if (!button || !button.addEventListener) return;
+    try {
+      if (button.__addItemsFromTextRefreshBound) return;
+      button.__addItemsFromTextRefreshBound = true;
+    } catch (e) {
+      // ignore
+    }
+    // Bind programmatically: Zotero 7+ loads pane scripts into a sandboxed
+    // scope, so inline oncommand handlers in the pane markup (which run in
+    // the preferences window's scope) cannot see AddItemsFromTextPrefs.
+    button.addEventListener('command', () => {
+      try {
+        this[methodName]();
+      } catch (e) {
+        Zotero.debug('Add Items from Text: Error running ' + methodName + ': ' + e);
+      }
+    });
+  },
+
+  _cleanup() {
+    try {
+      if (this._initPollTimer) clearInterval(this._initPollTimer);
+    } catch (e) {
+      // ignore
+    }
+    this._initPollTimer = null;
+    try {
+      if (this._providerWatchTimer) clearInterval(this._providerWatchTimer);
+    } catch (e) {
+      // ignore
+    }
+    this._providerWatchTimer = null;
+    try {
+      for (const observer of this._modelValueObservers || []) {
+        try { observer.disconnect(); } catch (err) {
+          // ignore
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    this._modelValueObservers = null;
   },
 
   _bindModelInputPreference(inputId, prefName, pickerId) {
@@ -333,21 +456,24 @@ var AddItemsFromTextPrefs = {
     try {
       if (picker.__addItemsFromTextModelPickerBound === prefName) return;
       picker.__addItemsFromTextModelPickerBound = prefName;
+      picker.__addItemsFromTextModelInputId = inputId;
+      picker.__addItemsFromTextModelPrefName = prefName;
     } catch (e) {
       // ignore
     }
 
     const applySelection = () => {
       const value = this._getMenulistValue(picker);
-      if (!value) return;
-      input.value = value;
-      try {
-        Zotero.Prefs.set(prefName, value, true);
-      } catch (e) {
-        // ignore
-      }
+      this._applyDetectedModelValue(picker, value);
     };
 
+    // Watch the menulist `value` attribute as the primary selection path
+    // (works on macOS even when command events do not bubble).
+    this._observeDetectedModelValue(picker);
+    // Bind the actual items as well: on some Zotero/Gecko builds the
+    // menuitem command event is the only signal that reaches the handler.
+    this._bindDetectedModelItems(picker);
+    // Keep parent listeners as additional fallbacks.
     picker.addEventListener('command', applySelection);
     picker.addEventListener('change', applySelection);
     try {
@@ -438,8 +564,13 @@ var AddItemsFromTextPrefs = {
       this._setDetectedModelOptions(modelPicker, values, currentModel);
       this._saveGeminiModelCache(values);
       
-      statusLabel.value = 'Found ' + textModels.length + ' models';
-      statusLabel.style.color = '#008800';
+      if (values.length) {
+        statusLabel.value = 'Refreshed ' + values.length + ' detected models';
+        statusLabel.style.color = '#008800';
+      } else {
+        statusLabel.value = 'Server reported no models';
+        statusLabel.style.color = '#666';
+      }
       
     } catch (e) {
       Zotero.debug('Add Items from Text: Error refreshing models: ' + e);
@@ -500,8 +631,13 @@ AddItemsFromTextPrefs.refreshOpenAIModels = async function refreshOpenAIModels()
     this._setDetectedModelOptions(modelPicker, ids, currentModel);
     this._saveOpenAIModelCache(baseUrl, ids);
 
-    statusLabel.value = 'Found ' + ids.length + ' models';
-    statusLabel.style.color = '#008800';
+    if (ids.length) {
+      statusLabel.value = 'Refreshed ' + ids.length + ' detected models';
+      statusLabel.style.color = '#008800';
+    } else {
+      statusLabel.value = 'Server reported no models';
+      statusLabel.style.color = '#666';
+    }
   } catch (e) {
     Zotero.debug('Add Items from Text: Error refreshing OpenAI-compatible models: ' + e);
     statusLabel.value = 'Error: ' + (e.message || 'Failed to load');
@@ -555,8 +691,13 @@ AddItemsFromTextPrefs.refreshOllamaModels = async function refreshOllamaModels()
     this._setDetectedModelOptions(modelPicker, names, currentModel);
     this._saveOllamaModelCache(baseUrl, names);
 
-    statusLabel.value = 'Found ' + names.length + ' models';
-    statusLabel.style.color = '#008800';
+    if (names.length) {
+      statusLabel.value = 'Refreshed ' + names.length + ' detected models';
+      statusLabel.style.color = '#008800';
+    } else {
+      statusLabel.value = 'Server reported no models';
+      statusLabel.style.color = '#666';
+    }
   } catch (e) {
     Zotero.debug('Add Items from Text: Error refreshing Ollama models: ' + e);
     statusLabel.value = 'Error: ' + (e.message || 'Failed to load');
@@ -569,83 +710,151 @@ AddItemsFromTextPrefs.refreshOllamaModels = async function refreshOllamaModels()
 AddItemsFromTextPrefs.init = function init() {
   try {
     this.ensureDefaults();
-    this.loadCachedModelLists();
-    this.updateProviderVisibility();
-
-    // Preference bindings can apply after script execution; retry a few times.
-    setTimeout(() => this.updateProviderVisibility(), 0);
-    setTimeout(() => this.updateProviderVisibility(), 50);
-    setTimeout(() => this.updateProviderVisibility(), 250);
-    // Cached model lists may depend on bound input values; retry after bindings settle.
-    setTimeout(() => this.loadCachedModelLists(), 0);
-    setTimeout(() => this.loadCachedModelLists(), 250);
-
-    const providerList = document.getElementById('add-items-from-text-llm-provider');
-    if (providerList) {
-      const onProviderChange = () => {
-        // Persist provider choice (some preference panes don't reliably bind menulist -> pref).
-        try {
-          const v = this._getMenulistValue(providerList);
-          if (v) Zotero.Prefs.set('extensions.zotero.additemsfromtext.llmProvider', v, true);
-        } catch (e) {
-          // ignore
-        }
-        this.updateProviderVisibility();
-        this.loadCachedModelLists();
-      };
-
-      try {
-        if (!providerList.__addItemsFromTextProviderListenerBound) {
-          providerList.__addItemsFromTextProviderListenerBound = true;
-          providerList.addEventListener('command', onProviderChange);
-          providerList.addEventListener('change', onProviderChange);
-          const popup = providerList.querySelector && providerList.querySelector('menupopup');
-          if (popup) popup.addEventListener('command', onProviderChange);
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    this._bindModelInputPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel', 'add-items-from-text-model-picker');
-    this._bindModelInputPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel', 'add-items-from-text-openai-model-picker');
-    this._bindModelInputPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel', 'add-items-from-text-ollama-model-picker');
-    this._bindDetectedModelPicker('add-items-from-text-model-picker', 'add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
-    this._bindDetectedModelPicker('add-items-from-text-openai-model-picker', 'add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
-    this._bindDetectedModelPicker('add-items-from-text-ollama-model-picker', 'add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
-
-    // Some preference panes apply the bound preference without firing DOM events.
-    // Keep the UI in sync by watching the underlying pref while the pane is open.
-    if (this._providerWatchTimer) {
-      clearInterval(this._providerWatchTimer);
-      this._providerWatchTimer = null;
-    }
-    this._lastProviderValue = null;
-    this._providerWatchTimer = setInterval(() => {
-      try {
-        const v = Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
-        if (v !== this._lastProviderValue) {
-          this._lastProviderValue = v;
-          this.updateProviderVisibility();
-          this.loadCachedModelLists();
-        }
-      } catch (e) {
-        // ignore
-      }
-    }, 200);
-
-    window.addEventListener('unload', () => {
-      try {
-        if (this._providerWatchTimer) clearInterval(this._providerWatchTimer);
-        this._providerWatchTimer = null;
-      } catch (e) {
-        // ignore
-      }
-    }, { once: true });
   } catch (e) {
     Zotero.debug('Add Items from Text: Error initializing defaults: ' + e);
   }
+
+  // Zotero 7+ executes this script before the pane markup is imported into
+  // the preferences window, so the pane's elements usually do not exist yet.
+  // Defer all DOM bindings until the pane root element appears.
+  if (this._initStarted) return;
+  this._initStarted = true;
+
+  const bindWhenReady = () => {
+    const root = document.getElementById('add-items-from-text-prefs-container');
+    if (!root) return false;
+    try {
+      this.bind();
+    } catch (e) {
+      Zotero.debug('Add Items from Text: Error binding preferences pane: ' + e);
+    }
+    return true;
+  };
+
+  if (!bindWhenReady()) {
+    const startedAt = Date.now();
+    this._initPollTimer = setInterval(() => {
+      if (bindWhenReady() || Date.now() - startedAt > 10000) {
+        clearInterval(this._initPollTimer);
+        this._initPollTimer = null;
+      }
+    }, 100);
+  }
 };
+
+AddItemsFromTextPrefs.bind = function bind() {
+  const root = document.getElementById('add-items-from-text-prefs-container');
+  if (!root) return;
+
+  // If a preference binding ended up writing the string "undefined" into an
+  // input, repair it now that the pane markup exists.
+  const gbvInput = document.getElementById('add-items-from-text-gbv-sru-url');
+  if (gbvInput && (gbvInput.value === "undefined" || gbvInput.value === "")) {
+    gbvInput.value = Zotero.Prefs.get('extensions.zotero.additemsfromtext.gbvSruUrl', true) || 'https://sru.k10plus.de/gvk';
+  }
+
+  this.loadCachedModelLists();
+  this.updateProviderVisibility();
+
+  // Preference bindings can apply after script execution; retry a few times.
+  setTimeout(() => this.updateProviderVisibility(), 0);
+  setTimeout(() => this.updateProviderVisibility(), 50);
+  setTimeout(() => this.updateProviderVisibility(), 250);
+  // Cached model lists may depend on bound input values; retry after bindings settle.
+  setTimeout(() => this.loadCachedModelLists(), 0);
+  setTimeout(() => this.loadCachedModelLists(), 250);
+
+  const providerList = document.getElementById('add-items-from-text-llm-provider');
+  if (providerList) {
+    const onProviderChange = () => {
+      // Persist provider choice (some preference panes don't reliably bind menulist -> pref).
+      try {
+        const v = this._getMenulistValue(providerList);
+        if (v) Zotero.Prefs.set('extensions.zotero.additemsfromtext.llmProvider', v, true);
+      } catch (e) {
+        // ignore
+      }
+      this.updateProviderVisibility();
+      this.loadCachedModelLists();
+    };
+
+    try {
+      if (!providerList.__addItemsFromTextProviderListenerBound) {
+        providerList.__addItemsFromTextProviderListenerBound = true;
+        providerList.addEventListener('command', onProviderChange);
+        providerList.addEventListener('change', onProviderChange);
+        const popup = providerList.querySelector && providerList.querySelector('menupopup');
+        if (popup) popup.addEventListener('command', onProviderChange);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  this._bindModelInputPreference('add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel', 'add-items-from-text-model-picker');
+  this._bindModelInputPreference('add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel', 'add-items-from-text-openai-model-picker');
+  this._bindModelInputPreference('add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel', 'add-items-from-text-ollama-model-picker');
+  this._bindDetectedModelPicker('add-items-from-text-model-picker', 'add-items-from-text-model', 'extensions.zotero.additemsfromtext.defaultModel');
+  this._bindDetectedModelPicker('add-items-from-text-openai-model-picker', 'add-items-from-text-openai-model', 'extensions.zotero.additemsfromtext.openaiModel');
+  this._bindDetectedModelPicker('add-items-from-text-ollama-model-picker', 'add-items-from-text-ollama-model', 'extensions.zotero.additemsfromtext.ollamaModel');
+
+  // Refresh buttons: bind programmatically (inline oncommand handlers
+  // cannot resolve sandbox-loaded globals in Zotero 7+ prefs windows).
+  this._bindRefreshButton('add-items-from-text-refresh-models', 'refreshModels');
+  this._bindRefreshButton('add-items-from-text-refresh-openai-models', 'refreshOpenAIModels');
+  this._bindRefreshButton('add-items-from-text-refresh-ollama-models', 'refreshOllamaModels');
+
+  // Zotero dispatches a synthetic `load` event on the pane fragment root
+  // after the preference-attribute sync has run, and a synthetic `unload`
+  // when the pane is closed.
+  try {
+    if (!root.__addItemsFromTextLifecycleBound) {
+      root.__addItemsFromTextLifecycleBound = true;
+      root.addEventListener('load', () => {
+        try { this.bind(); } catch (e) {
+          // ignore
+        }
+      });
+      root.addEventListener('unload', () => this._cleanup());
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Some preference panes apply the bound preference without firing DOM events.
+  // Keep the UI in sync by watching the underlying pref while the pane is open.
+  if (this._providerWatchTimer) {
+    clearInterval(this._providerWatchTimer);
+    this._providerWatchTimer = null;
+  }
+  this._lastProviderValue = null;
+  this._providerWatchTimer = setInterval(() => {
+    try {
+      const v = Zotero.Prefs.get('extensions.zotero.additemsfromtext.llmProvider', true) || 'gemini';
+      if (v !== this._lastProviderValue) {
+        this._lastProviderValue = v;
+        this.updateProviderVisibility();
+        this.loadCachedModelLists();
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, 200);
+
+  if (!this._windowUnloadBound) {
+    this._windowUnloadBound = true;
+    window.addEventListener('unload', () => this._cleanup(), { once: true });
+  }
+};
+
+// Zotero 7+ loads pane scripts into a sandboxed scope whose prototype is
+// the preferences window. Expose the controller on the window so it is
+// reachable from the window scope (e.g., the window's web console) as well.
+try {
+  window.AddItemsFromTextPrefs = AddItemsFromTextPrefs;
+} catch (e) {
+  // ignore
+}
 
 try {
   // Run immediately in case the document is already loaded when this script is injected.

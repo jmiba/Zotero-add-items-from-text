@@ -12,9 +12,19 @@ const preferencesMarkup = readFileSync(
   "utf8",
 );
 
+// Gecko exposes element.children as an HTMLCollection: array-like but NOT
+// iterable. Mock the same shape so tests catch for...of regressions.
+function legacyCollection(items: any[]) {
+  const col: any = { length: items.length };
+  for (let i = 0; i < items.length; i++) col[i] = items[i];
+  return col;
+}
+
 function loadController() {
   const stored = new Map<string, unknown>();
   const elements = new Map<string, any>();
+  const mutationObservers: any[] = [];
+  const intervalCallbacks: Array<() => void> = [];
   const context: Record<string, any> = {
     Zotero: {
       Prefs: {
@@ -25,18 +35,42 @@ function loadController() {
     },
     document: {
       getElementById: (id: string) => elements.get(id) || null,
-      createXULElement: (name: string) => ({
-        name,
-        setAttribute(key: string, value: string) {
-          this[key] = value;
-        },
-      }),
+      createXULElement: (name: string) => {
+        const attributes = new Map<string, string>();
+        const listeners = new Map<string, () => void>();
+        return {
+          name,
+          listeners,
+          setAttribute(key: string, value: string) {
+            attributes.set(key, value);
+            (this as any)[key] = value;
+          },
+          getAttribute(key: string) {
+            return attributes.get(key) || "";
+          },
+          addEventListener(event: string, listener: () => void) {
+            listeners.set(event, listener);
+          },
+        };
+      },
       createElement: (name: string) => ({ name }),
     },
     window: { addEventListener: () => undefined },
     setTimeout: () => 0,
-    setInterval: () => 0,
+    setInterval: (callback: () => void) => {
+      intervalCallbacks.push(callback);
+      return intervalCallbacks.length;
+    },
     clearInterval: () => undefined,
+    MutationObserver: class {
+      cb: () => void;
+      constructor(cb: () => void) {
+        this.cb = cb;
+        mutationObservers.push(this);
+      }
+      observe() {}
+      disconnect() {}
+    },
   };
 
   runInNewContext(preferencesScript, context);
@@ -44,6 +78,8 @@ function loadController() {
     controller: context.AddItemsFromTextPrefs,
     elements,
     stored,
+    mutationObservers,
+    intervalCallbacks,
   };
 }
 
@@ -63,6 +99,9 @@ test("all providers expose a detected-model dropdown and a custom model ID field
     );
   }
   assert.doesNotMatch(preferencesMarkup, /<html:datalist/);
+  // Pane scripts load into a sandbox in Zotero 7+, so inline handlers
+  // cannot reference the sandboxed controller.
+  assert.doesNotMatch(preferencesMarkup, /oncommand="AddItemsFromTextPrefs\./);
 });
 
 test("refreshing detected models builds an explicit dropdown without selecting over a custom ID", () => {
@@ -158,4 +197,156 @@ test("selecting a detected model copies it into the active model ID", () => {
   assert.equal(input.value, "detected-model:latest");
   assert.equal(stored.get(prefName), "detected-model:latest");
   assert.ok(popupListeners.has("command"));
+});
+
+test("a non-bubbling macOS menuitem command still applies the detected model", () => {
+  const { controller, elements, stored } = loadController();
+  const prefName = "extensions.zotero.additemsfromtext.openaiModel";
+  const children: any[] = [];
+  const popup = {
+    get children() {
+      return legacyCollection(children);
+    },
+    get firstChild() {
+      return children[0] || null;
+    },
+    removeChild(child: any) {
+      children.splice(children.indexOf(child), 1);
+    },
+    appendChild(child: any) {
+      children.push(child);
+    },
+    addEventListener: () => undefined,
+  };
+  const picker: any = {
+    value: "",
+    selectedIndex: 0,
+    querySelector: () => popup,
+    addEventListener: () => undefined,
+  };
+  const input: any = { value: "custom-model" };
+  elements.set("model-picker", picker);
+  elements.set("model-input", input);
+
+  controller._bindDetectedModelPicker("model-picker", "model-input", prefName);
+  controller._setDetectedModelOptions(
+    picker,
+    ["detected-a", "detected-b"],
+    "custom-model",
+  );
+  children[2].listeners.get("command")?.();
+
+  assert.equal(input.value, "detected-b");
+  assert.equal(stored.get(prefName), "detected-b");
+});
+
+test("menulist value attribute mutation applies the detected model", () => {
+  const { controller, elements, stored, mutationObservers } = loadController();
+  const prefName = "extensions.zotero.additemsfromtext.defaultModel";
+  const popup = {
+    children: legacyCollection([]),
+    addEventListener: () => undefined,
+  };
+  const picker: any = {
+    value: "",
+    selectedIndex: 0,
+    querySelector: () => popup,
+    addEventListener: () => undefined,
+  };
+  const input: any = { value: "custom-model" };
+  elements.set("model-picker", picker);
+  elements.set("model-input", input);
+
+  controller._bindDetectedModelPicker("model-picker", "model-input", prefName);
+  assert.equal(mutationObservers.length, 1);
+
+  // Gecko updates the menulist `value` attribute when the user picks an
+  // item; the observer must mirror that into the Model ID field and pref.
+  picker.value = "detected-x";
+  mutationObservers[0].cb();
+
+  assert.equal(input.value, "detected-x");
+  assert.equal(stored.get(prefName), "detected-x");
+
+  // An empty value (placeholder) must not clobber a custom model ID.
+  picker.value = "";
+  mutationObservers[0].cb();
+  assert.equal(input.value, "detected-x");
+});
+
+test("cache age formatting for stale cached model lists", () => {
+  const { controller } = loadController();
+  assert.equal(controller._formatCacheAge(0), "");
+  assert.equal(controller._formatCacheAge(Date.now() - 30 * 1000), "just now");
+  assert.equal(
+    controller._formatCacheAge(Date.now() - 5 * 60 * 1000),
+    "5 min ago",
+  );
+  assert.equal(
+    controller._formatCacheAge(Date.now() - 3 * 60 * 60 * 1000),
+    "3 h ago",
+  );
+});
+
+test("refresh buttons are bound programmatically from the pane script", () => {
+  const { controller, elements } = loadController();
+  let calls = 0;
+  (controller as any).stubRefresh = () => {
+    calls += 1;
+  };
+  let registrations = 0;
+  const listeners: Record<string, () => void> = {};
+  const button: any = {
+    addEventListener: (event: string, listener: () => void) => {
+      registrations += 1;
+      listeners[event] = listener;
+    },
+  };
+  elements.set("add-items-from-text-refresh-models", button);
+
+  controller._bindRefreshButton("add-items-from-text-refresh-models", "stubRefresh");
+  // A second binding must not double-bind.
+  controller._bindRefreshButton("add-items-from-text-refresh-models", "stubRefresh");
+  assert.equal(registrations, 1);
+
+  listeners.command();
+  assert.equal(calls, 1);
+});
+
+test("pane bindings are deferred until the pane markup exists in the DOM", () => {
+  const { controller, elements, intervalCallbacks } = loadController();
+  const input: any = {
+    value: "",
+    listeners: new Map<string, () => void>(),
+    addEventListener(event: string, listener: () => void) {
+      this.listeners.set(event, listener);
+    },
+  };
+  const picker: any = {
+    value: "",
+    selectedIndex: 0,
+    querySelector: () => ({ children: [] }),
+    addEventListener: () => undefined,
+  };
+  elements.set("add-items-from-text-model", input);
+  elements.set("add-items-from-text-model-picker", picker);
+
+  // The script runs before Zotero imports the pane fragment, so at script
+  // load time the pane root does not exist and init registers a poll.
+  const initPoll = intervalCallbacks[0];
+  assert.ok(initPoll, "init must poll for the pane root element");
+
+  // Simulate Zotero importing the pane fragment, then the next poll tick.
+  const root: any = { addEventListener: () => undefined };
+  elements.set("add-items-from-text-prefs-container", root);
+  initPoll();
+
+  assert.ok(
+    input.listeners.has("input"),
+    "model input bound after pane import",
+  );
+  assert.equal(
+    picker.__addItemsFromTextModelInputId,
+    "add-items-from-text-model",
+  );
 });

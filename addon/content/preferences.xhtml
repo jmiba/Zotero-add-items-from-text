@@ -42,15 +42,10 @@
                   style="flex: 1; margin-left: 8px; min-width: 250px;">
           <menupopup>
             <menuitem label="Select a detected model…" value="" disabled="true" />
-            <menuitem label="gemini-2.0-flash" value="gemini-2.0-flash" />
-            <menuitem label="gemini-2.0-flash-lite" value="gemini-2.0-flash-lite" />
-            <menuitem label="gemini-2.5-flash" value="gemini-2.5-flash" />
-            <menuitem label="gemini-2.5-flash-lite" value="gemini-2.5-flash-lite" />
           </menupopup>
         </menulist>
         <button id="add-items-from-text-refresh-models"
                 label="Refresh Models"
-                oncommand="AddItemsFromTextPrefs.refreshModels();"
                 style="margin-left: 8px;" />
       </hbox>
       <hbox align="center" style="margin-top: 6px;">
@@ -96,12 +91,10 @@
                   style="flex: 1; margin-left: 8px; min-width: 250px;">
           <menupopup>
             <menuitem label="Select a detected model…" value="" disabled="true" />
-            <menuitem label="gpt-4o-mini" value="gpt-4o-mini" />
           </menupopup>
         </menulist>
         <button id="add-items-from-text-refresh-openai-models"
                 label="Refresh Models"
-                oncommand="AddItemsFromTextPrefs.refreshOpenAIModels();"
                 style="margin-left: 8px;" />
       </hbox>
       <hbox align="center" style="margin-top: 6px;">
@@ -139,12 +132,10 @@
                   style="flex: 1; margin-left: 8px; min-width: 250px;">
           <menupopup>
             <menuitem label="Select a detected model…" value="" disabled="true" />
-            <menuitem label="llama3.2" value="llama3.2" />
           </menupopup>
         </menulist>
         <button id="add-items-from-text-refresh-ollama-models"
                 label="Refresh Models"
-                oncommand="AddItemsFromTextPrefs.refreshOllamaModels();"
                 style="margin-left: 8px;" />
       </hbox>
       <hbox align="center" style="margin-top: 6px;">
@@ -311,7 +302,7 @@
       from unstructured text and import them into your Zotero library.
     </description>
     <description style="margin-top: 5px; font-size: 11px; color: #666;">
-      Version 1.0.15
+      Version 1.0.16
     </description>
   </groupbox>
 
