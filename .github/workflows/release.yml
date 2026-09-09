@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 18
           cache: npm
@@ -34,7 +34,7 @@ jobs:
           zip -r ../add-items-from-text.xpi . -x '*.DS_Store'
 
       - name: Upload XPI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: add-items-from-text.xpi
           path: add-items-from-text.xpi
